@@ -133,10 +133,10 @@ glienicke/
 ## Implemented NIPs
 
 - **NIP-09: Event Deletions**: Handles `kind:5` events to delete referenced events, as specified in NIP-09.
+- **NIP-11: Relay Information Document**: Serves a JSON document at the relay's root URL containing metadata about the relay, including supported NIPs, name, description, and version.
 
 ## Planned NIPs (thanks Jaromil)
 
-- NIP-11: Relay information document
 - NIP-17: DM deletions
 - NIP-40: Event expiration
 - NIP-42: Authentication

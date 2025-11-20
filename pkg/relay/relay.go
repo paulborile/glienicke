@@ -7,11 +7,17 @@ import (
 	"net/http"
 	"sync"
 
+	"encoding/json"
+
 	"github.com/gorilla/websocket"
 	"github.com/paul/glienicke/pkg/event"
+	"github.com/paul/glienicke/pkg/nips/nip11"
 	"github.com/paul/glienicke/pkg/protocol"
 	"github.com/paul/glienicke/pkg/storage"
 )
+
+// Version of the relay
+const Version = "0.3.0"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -21,9 +27,10 @@ var upgrader = websocket.Upgrader{
 
 // Relay is the main relay orchestrator
 type Relay struct {
-	store   storage.Store
-	clients map[*protocol.Client]bool
+	store     storage.Store
+	clients   map[*protocol.Client]bool
 	clientsMu sync.RWMutex
+	version   string
 }
 
 // New creates a new relay instance
@@ -31,11 +38,26 @@ func New(store storage.Store) *Relay {
 	return &Relay{
 		store:   store,
 		clients: make(map[*protocol.Client]bool),
+		version: Version,
 	}
 }
 
 // ServeHTTP handles WebSocket upgrade requests
 func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Header.Get("Accept") == "application/nostr+json" {
+		info := &nip11.RelayInformationDocument{
+			Name:          "Glienicke Nostr Relay",
+			Description:   "A Nostr relay written in Go",
+			Software:      "https://github.com/paul/glienicke",
+			Version:       r.version,
+			SupportedNIPs: []int{1, 9, 11},
+		}
+
+		w.Header().Set("Content-Type", "application/nostr+json")
+		json.NewEncoder(w).Encode(info)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, req, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
