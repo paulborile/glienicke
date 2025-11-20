@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 - 2025-11-20
+
+### Implemented NIP-11 Features
+
+*   **Relay Information Document:**
+    *   The relay now serves a NIP-11 relay information document at the root URL.
+    *   The document is served when the `Accept` header is `application/nostr+json`.
+    *   The document includes the relay's name, description, software, version, and supported NIPs.
+
 ## 0.2.0 - 2025-11-20
 
 ### Implemented NIP-09 Features
@@ -45,4 +54,4 @@
 
 ### Known Issues
 
-*   Tag filtering for generic tags (e.g., `#e`, `#p`) in `REQ` messages is not working correctly and is currently being debugbed.
+*   Tag filtering for generic tags (e.g., `#e`, `#p`) in `REQ` messages is not working correctly and is currently being debugged.
