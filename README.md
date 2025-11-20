@@ -130,9 +130,12 @@ glienicke/
 - **Signatures**: 64-byte format
 - **Library**: `github.com/btcsuite/btcd/btcec/v2/schnorr`
 
+## Implemented NIPs
+
+- **NIP-09: Event Deletions**: Handles `kind:5` events to delete referenced events, as specified in NIP-09.
+
 ## Planned NIPs (thanks Jaromil)
 
-- NIP-09: Event deletions
 - NIP-11: Relay information document
 - NIP-17: DM deletions
 - NIP-40: Event expiration
