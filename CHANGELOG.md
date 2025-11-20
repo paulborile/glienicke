@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0 - 2025-11-20
+
+### Implemented NIP-09 Features
+
+*   **Event Deletion Request (`EVENT` kind 5):**
+    *   Relay now processes `EVENT` messages of kind 5 (deletion events).
+    *   Deletion requests specify event IDs to be deleted using 'e' tags.
+    *   Only the original author of an event can request its deletion.
+    *   Deleted events are marked as such in storage and are no longer returned by `REQ` queries.
+    *   The relay does not send an `OK` message for deletion events, aligning with common client expectations.
+
 ## 0.1.0 - 2025-11-18
 
 ### Implemented NIP-01 Features
@@ -34,4 +45,4 @@
 
 ### Known Issues
 
-*   Tag filtering for generic tags (e.g., `#e`, `#p`) in `REQ` messages is not working correctly and is currently being debugged.
+*   Tag filtering for generic tags (e.g., `#e`, `#p`) in `REQ` messages is not working correctly and is currently being debugbed.

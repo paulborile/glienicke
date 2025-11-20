@@ -61,6 +61,21 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // HandleEvent processes an EVENT message from a client
 func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.Event) error {
+	// NIP-09: Handle event deletion
+	if evt.Kind == 5 {
+		for _, tag := range evt.Tags {
+			if len(tag) >= 2 && tag[0] == "e" {
+				eventID := tag[1]
+				if err := r.store.DeleteEvent(ctx, eventID, evt.PubKey); err != nil {
+					// Log the error but don't stop processing other deletions
+					log.Printf("Failed to delete event %s: %v", eventID, err)
+				}
+			}
+		}
+		// Do not send OK for deletion events, just process them.
+		return nil
+	}
+
 	// Check for duplicate event
 	existingEvent, err := r.store.GetEvent(ctx, evt.ID)
 	if err != nil && err != storage.ErrNotFound {
@@ -74,8 +89,12 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 
 	// Save to storage
 	if err := r.store.SaveEvent(ctx, evt); err != nil {
+		c.SendOK(evt.ID, false, fmt.Sprintf("error: failed to save event: %v", err))
 		return fmt.Errorf("failed to save event: %w", err)
 	}
+
+	// Send OK message
+	c.SendOK(evt.ID, true, "")
 
 	// Broadcast to subscribed clients
 	r.broadcastEvent(evt)

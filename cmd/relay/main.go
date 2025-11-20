@@ -11,7 +11,7 @@ import (
 	"github.com/paul/glienicke/pkg/relay"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 func main() {
 	addr := flag.String("addr", ":8080", "Address to listen on")
