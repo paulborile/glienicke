@@ -11,7 +11,6 @@ import (
 	"github.com/paul/glienicke/pkg/relay"
 )
 
-const Version = "0.2.0"
 
 func main() {
 	addr := flag.String("addr", ":8080", "Address to listen on")
@@ -31,7 +30,7 @@ func main() {
 
 	// Start relay in goroutine
 	go func() {
-		log.Printf("Starting Nostr relay v%s on %s", Version, *addr)
+		log.Printf("Starting Nostr relay v%s on %s", relay.Version, *addr)
 		if err := r.Start(*addr); err != nil {
 			log.Fatalf("Relay error: %v", err)
 		}

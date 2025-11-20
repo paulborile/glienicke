@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/paul/glienicke/pkg/relay"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -39,7 +40,7 @@ func TestNIP11_RelayInformationDocument(t *testing.T) {
 	assert.Equal(t, "Glienicke Nostr Relay", infoDoc["name"])
 	assert.Equal(t, "A Nostr relay written in Go", infoDoc["description"])
 	assert.Equal(t, "https://github.com/paul/glienicke", infoDoc["software"])
-	assert.Equal(t, "v0.3.0", infoDoc["version"])
+	assert.Equal(t, relay.Version, infoDoc["version"])
 
 	supportedNIPs, ok := infoDoc["supported_nips"].([]interface{})
 	assert.True(t, ok)
