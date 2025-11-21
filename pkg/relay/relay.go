@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/paul/glienicke/pkg/event"
+	"github.com/paul/glienicke/pkg/nips/nip09"
 	"github.com/paul/glienicke/pkg/nips/nip11"
 	"github.com/paul/glienicke/pkg/protocol"
 	"github.com/paul/glienicke/pkg/storage"
@@ -85,16 +86,9 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.Event) error {
 	// NIP-09: Handle event deletion
 	if evt.Kind == 5 {
-		for _, tag := range evt.Tags {
-			if len(tag) >= 2 && tag[0] == "e" {
-				eventID := tag[1]
-				if err := r.store.DeleteEvent(ctx, eventID, evt.PubKey); err != nil {
-					// Log the error but don't stop processing other deletions
-					log.Printf("Failed to delete event %s: %v", eventID, err)
-				}
-			}
+		if err := nip09.HandleDeletion(ctx, r.store, evt); err != nil {
+			log.Printf("NIP-09 deletion handling failed: %v", err)
 		}
-		// Do not send OK for deletion events, just process them.
 		return nil
 	}
 
