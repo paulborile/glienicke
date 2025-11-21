@@ -137,7 +137,10 @@ glienicke/
 
 ## Planned NIPs (thanks Jaromil)
 
-- NIP-17: DM deletions
+- NIP-17: Private Direct Messages which requires : 
+  . NIP-59 Gift Wrap
+  . NIP-44 Encrypted Payloads (Versioned)
+  
 - NIP-40: Event expiration
 - NIP-42: Authentication
 - NIP-50: Search capability
