@@ -10,10 +10,12 @@ import (
 	"encoding/json"
 
 	"github.com/gorilla/websocket"
+	"github.com/nbd-wtf/go-nostr"
 	"github.com/paul/glienicke/pkg/event"
 	"github.com/paul/glienicke/pkg/nips/nip09"
 	"github.com/paul/glienicke/pkg/nips/nip11"
 	"github.com/paul/glienicke/pkg/nips/nip44"
+	"github.com/paul/glienicke/pkg/nips/nip59"
 	"github.com/paul/glienicke/pkg/protocol"
 	"github.com/paul/glienicke/pkg/storage"
 )
@@ -52,7 +54,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Description:   "A Nostr relay written in Go",
 			Software:      "https://github.com/paul/glienicke",
 			Version:       r.version,
-			SupportedNIPs: []int{1, 9, 11, 44},
+			SupportedNIPs: []int{1, 9, 11, 44, 59},
 		}
 
 		w.Header().Set("Content-Type", "application/nostr+json")
@@ -90,6 +92,20 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 		if err := nip09.HandleDeletion(ctx, r.store, evt); err != nil {
 			log.Printf("NIP-09 deletion handling failed: %v", err)
 		}
+		return nil
+	}
+
+	// NIP-59: Handle gift wrap events
+	nostrEvt := convertLocalEventToNostrEvent(evt)
+	if nip59.IsGiftWrap(nostrEvt) {
+		// For gift wrap events, we don't unwrap or validate the inner event.
+		// We just store it and broadcast it to the recipient.
+		if err := r.store.SaveEvent(ctx, evt); err != nil {
+			c.SendOK(evt.ID, false, fmt.Sprintf("error: failed to save event: %v", err))
+			return fmt.Errorf("failed to save gift wrap event: %w", err)
+		}
+		c.SendOK(evt.ID, true, "")
+		r.broadcastEvent(evt)
 		return nil
 	}
 
@@ -200,4 +216,27 @@ func (r *Relay) Start(addr string) error {
 	http.Handle("/", r)
 	log.Printf("Relay starting on %s", addr)
 	return http.ListenAndServe(addr, nil)
+}
+
+// convertLocalEventToNostrEvent converts a local_event.Event to a nostr.Event
+func convertLocalEventToNostrEvent(le *event.Event) *nostr.Event {
+	if le == nil {
+		return nil
+	}
+
+	nostrEvt := &nostr.Event{
+		ID:        le.ID,
+		PubKey:    le.PubKey,
+		CreatedAt: nostr.Timestamp(le.CreatedAt),
+		Kind:      le.Kind,
+		Tags:      make(nostr.Tags, len(le.Tags)),
+		Content:   le.Content,
+		Sig:       le.Sig,
+	}
+
+	for i, tag := range le.Tags {
+		nostrEvt.Tags[i] = nostr.Tag(tag)
+	}
+
+	return nostrEvt
 }

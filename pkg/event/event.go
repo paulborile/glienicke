@@ -246,7 +246,7 @@ func (e *Event) Matches(f *Filter) bool {
 	return true
 }
 
-	// hasTag checks if the event has a tag with the given name and value
+// hasTag checks if the event has a tag with the given name and value
 func (e *Event) hasTag(name, value string) bool {
 	for _, tag := range e.Tags {
 		if len(tag) >= 2 && tag[0] == name {
@@ -257,6 +257,7 @@ func (e *Event) hasTag(name, value string) bool {
 	}
 	return false
 }
+
 // matchesPrefix checks if target starts with prefix (supports prefix matching)
 func matchesPrefix(target, prefix string) bool {
 	if len(prefix) > len(target) {
