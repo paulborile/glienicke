@@ -54,7 +54,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Description:   "A Nostr relay written in Go",
 			Software:      "https://github.com/paul/glienicke",
 			Version:       r.version,
-			SupportedNIPs: []int{1, 9, 11, 44, 59},
+			SupportedNIPs: []int{1, 9, 11, 17, 44, 59},
 		}
 
 		w.Header().Set("Content-Type", "application/nostr+json")
