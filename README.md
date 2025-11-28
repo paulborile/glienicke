@@ -65,6 +65,7 @@ The relay follows a black box modular design:
 - **`pkg/storage`**: Storage interface (implementation-agnostic)
 - **`pkg/protocol`**: WebSocket protocol handler
 - **`pkg/relay`**: Main relay orchestrator
+- **`pkg/nips`**: NIP-specific implementations (e.g., NIP-09, NIP-11)
 - **`internal/store/memory`**: In-memory storage (for testing)
 
 ## Integration Tests
@@ -104,6 +105,9 @@ glienicke/
 │   ├── event/              # Event primitives & validation
 │   ├── storage/            # Storage interface
 │   ├── protocol/           # WebSocket protocol handler
+│   ├── nips/               # NIP-specific implementations
+│   │   ├── nip09/          # NIP-09 (Event Deletion)
+│   │   └── nip11/          # NIP-11 (Relay Information Document)
 │   └── relay/              # Relay orchestrator
 ├── internal/
 │   ├── store/

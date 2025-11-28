@@ -13,6 +13,7 @@ import (
 	"github.com/paul/glienicke/pkg/event"
 	"github.com/paul/glienicke/pkg/nips/nip09"
 	"github.com/paul/glienicke/pkg/nips/nip11"
+	"github.com/paul/glienicke/pkg/nips/nip44"
 	"github.com/paul/glienicke/pkg/protocol"
 	"github.com/paul/glienicke/pkg/storage"
 )
@@ -51,7 +52,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Description:   "A Nostr relay written in Go",
 			Software:      "https://github.com/paul/glienicke",
 			Version:       r.version,
-			SupportedNIPs: []int{1, 9, 11},
+			SupportedNIPs: []int{1, 9, 11, 44},
 		}
 
 		w.Header().Set("Content-Type", "application/nostr+json")
@@ -157,6 +158,14 @@ func (r *Relay) broadcastEvent(evt *event.Event) {
 
 	for client := range r.clients {
 		go func(c *protocol.Client) {
+			// NIP-44: Encrypted Direct Messages (kind 4)
+			if nip44.IsEncryptedDirectMessage(evt) {
+				recipientPubKey, found := nip44.GetRecipientPubKey(evt)
+				if !found || !c.HasSubscriptionToPubKey(recipientPubKey) {
+					return // Don't broadcast if not the recipient or not subscribed to recipient
+				}
+			}
+
 			subs := c.GetSubscriptions()
 			for subID, filters := range subs {
 				// Check if event matches any filter
