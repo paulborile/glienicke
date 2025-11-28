@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 - 2025-11-28
+
+### Implemented NIP-17: Private Direct Messages  : 
+  . NIP-59 Gift Wrap
+  . NIP-44 Encrypted Payloads (Versioned)
+
+
 ## 0.3.0 - 2025-11-20
 
 ### Implemented NIP-11 Features

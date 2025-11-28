@@ -10,14 +10,18 @@ import (
 	"encoding/json"
 
 	"github.com/gorilla/websocket"
+	"github.com/nbd-wtf/go-nostr"
 	"github.com/paul/glienicke/pkg/event"
+	"github.com/paul/glienicke/pkg/nips/nip09"
 	"github.com/paul/glienicke/pkg/nips/nip11"
+	"github.com/paul/glienicke/pkg/nips/nip44"
+	"github.com/paul/glienicke/pkg/nips/nip59"
 	"github.com/paul/glienicke/pkg/protocol"
 	"github.com/paul/glienicke/pkg/storage"
 )
 
 // Version of the relay
-const Version = "0.3.0"
+const Version = "0.4.0"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -50,7 +54,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Description:   "A Nostr relay written in Go",
 			Software:      "https://github.com/paul/glienicke",
 			Version:       r.version,
-			SupportedNIPs: []int{1, 9, 11},
+			SupportedNIPs: []int{1, 9, 11, 17, 44, 59},
 		}
 
 		w.Header().Set("Content-Type", "application/nostr+json")
@@ -85,16 +89,23 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.Event) error {
 	// NIP-09: Handle event deletion
 	if evt.Kind == 5 {
-		for _, tag := range evt.Tags {
-			if len(tag) >= 2 && tag[0] == "e" {
-				eventID := tag[1]
-				if err := r.store.DeleteEvent(ctx, eventID, evt.PubKey); err != nil {
-					// Log the error but don't stop processing other deletions
-					log.Printf("Failed to delete event %s: %v", eventID, err)
-				}
-			}
+		if err := nip09.HandleDeletion(ctx, r.store, evt); err != nil {
+			log.Printf("NIP-09 deletion handling failed: %v", err)
 		}
-		// Do not send OK for deletion events, just process them.
+		return nil
+	}
+
+	// NIP-59: Handle gift wrap events
+	nostrEvt := convertLocalEventToNostrEvent(evt)
+	if nip59.IsGiftWrap(nostrEvt) {
+		// For gift wrap events, we don't unwrap or validate the inner event.
+		// We just store it and broadcast it to the recipient.
+		if err := r.store.SaveEvent(ctx, evt); err != nil {
+			c.SendOK(evt.ID, false, fmt.Sprintf("error: failed to save event: %v", err))
+			return fmt.Errorf("failed to save gift wrap event: %w", err)
+		}
+		c.SendOK(evt.ID, true, "")
+		r.broadcastEvent(evt)
 		return nil
 	}
 
@@ -163,6 +174,14 @@ func (r *Relay) broadcastEvent(evt *event.Event) {
 
 	for client := range r.clients {
 		go func(c *protocol.Client) {
+			// NIP-44: Encrypted Direct Messages (kind 4)
+			if nip44.IsEncryptedDirectMessage(evt) {
+				recipientPubKey, found := nip44.GetRecipientPubKey(evt)
+				if !found || !c.HasSubscriptionToPubKey(recipientPubKey) {
+					return // Don't broadcast if not the recipient or not subscribed to recipient
+				}
+			}
+
 			subs := c.GetSubscriptions()
 			for subID, filters := range subs {
 				// Check if event matches any filter
@@ -197,4 +216,27 @@ func (r *Relay) Start(addr string) error {
 	http.Handle("/", r)
 	log.Printf("Relay starting on %s", addr)
 	return http.ListenAndServe(addr, nil)
+}
+
+// convertLocalEventToNostrEvent converts a local_event.Event to a nostr.Event
+func convertLocalEventToNostrEvent(le *event.Event) *nostr.Event {
+	if le == nil {
+		return nil
+	}
+
+	nostrEvt := &nostr.Event{
+		ID:        le.ID,
+		PubKey:    le.PubKey,
+		CreatedAt: nostr.Timestamp(le.CreatedAt),
+		Kind:      le.Kind,
+		Tags:      make(nostr.Tags, len(le.Tags)),
+		Content:   le.Content,
+		Sig:       le.Sig,
+	}
+
+	for i, tag := range le.Tags {
+		nostrEvt.Tags[i] = nostr.Tag(tag)
+	}
+
+	return nostrEvt
 }

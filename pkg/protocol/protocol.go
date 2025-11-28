@@ -311,10 +311,29 @@ func (c *Client) GetSubscriptions() map[string][]*event.Filter {
 	for k, v := range c.subscriptions {
 		subs[k] = v
 	}
-	return subs
-}
-
-// RemoteAddr returns the remote address of the client
-func (c *Client) RemoteAddr() string {
-	return c.conn.RemoteAddr().String()
-}
+			return subs
+	}
+	
+	// HasSubscriptionToPubKey checks if the client has any active subscription that includes the given public key in a 'p' tag.
+	func (c *Client) HasSubscriptionToPubKey(pubKey string) bool {
+		c.subMu.RLock()
+		defer c.subMu.RUnlock()
+	
+		for _, filters := range c.subscriptions {
+			for _, filter := range filters {
+				if pTags, ok := filter.Tags["p"]; ok {
+					for _, p := range pTags {
+						if p == pubKey {
+							return true
+						}
+					}
+				}
+			}
+		}
+		return false
+	}
+	
+	// RemoteAddr returns the remote address of the client
+	func (c *Client) RemoteAddr() string {
+		return c.conn.RemoteAddr().String()
+	}
