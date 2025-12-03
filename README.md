@@ -138,14 +138,13 @@ glienicke/
 
 - **NIP-09: Event Deletions**: Handles `kind:5` events to delete referenced events, as specified in NIP-09.
 - **NIP-11: Relay Information Document**: Serves a JSON document at the relay's root URL containing metadata about the relay, including supported NIPs, name, description, and version.
-- **NIP-17: Private Direct Messages**  : 
-  . **NIP-59 Gift Wrap**
-  . **NIP-44 Encrypted Payloads (Versioned)**
+- **NIP-17: Private Direct Messages**: 
+  - **NIP-59 Gift Wrap**
+  - **NIP-44 Encrypted Payloads (Versioned)**
+- **NIP-40: Event Expiration**: Supports `expiration` tag to automatically expire and filter events based on timestamp.
 
 ## Planned NIPs (thanks Jaromil)
 
-  
-- NIP-40: Event expiration
 - NIP-42: Authentication
 - NIP-50: Search capability
 - NIP-56: Reporting

@@ -14,6 +14,7 @@ import (
 	"github.com/paul/glienicke/pkg/event"
 	"github.com/paul/glienicke/pkg/nips/nip09"
 	"github.com/paul/glienicke/pkg/nips/nip11"
+	"github.com/paul/glienicke/pkg/nips/nip40"
 	"github.com/paul/glienicke/pkg/nips/nip44"
 	"github.com/paul/glienicke/pkg/nips/nip59"
 	"github.com/paul/glienicke/pkg/protocol"
@@ -21,7 +22,7 @@ import (
 )
 
 // Version of the relay
-const Version = "0.4.0"
+const Version = "0.5.0"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -54,7 +55,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Description:   "A Nostr relay written in Go",
 			Software:      "https://github.com/paul/glienicke",
 			Version:       r.version,
-			SupportedNIPs: []int{1, 9, 11, 17, 44, 59},
+			SupportedNIPs: []int{1, 9, 11, 17, 40, 44, 59},
 		}
 
 		w.Header().Set("Content-Type", "application/nostr+json")
@@ -87,6 +88,12 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // HandleEvent processes an EVENT message from a client
 func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.Event) error {
+	// NIP-40: Check for expired events
+	if nip40.ShouldRejectEvent(evt) {
+		c.SendOK(evt.ID, false, "event has expired")
+		return fmt.Errorf("event has expired")
+	}
+
 	// NIP-09: Handle event deletion
 	if evt.Kind == 5 {
 		if err := nip09.HandleDeletion(ctx, r.store, evt); err != nil {
@@ -143,8 +150,12 @@ func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string,
 		return fmt.Errorf("failed to query events: %w", err)
 	}
 
-	// Send stored events to the client
+	// Send stored events to the client, filtering out expired events
 	for _, evt := range events {
+		// NIP-40: Filter out expired events
+		if nip40.ShouldFilterEvent(evt) {
+			continue
+		}
 		if err := c.SendEvent(subID, evt); err != nil {
 			log.Printf("Failed to send stored event to client: %v", err)
 			// May want to terminate connection here depending on error
@@ -174,6 +185,11 @@ func (r *Relay) broadcastEvent(evt *event.Event) {
 
 	for client := range r.clients {
 		go func(c *protocol.Client) {
+			// NIP-40: Filter out expired events
+			if nip40.ShouldFilterEvent(evt) {
+				return
+			}
+
 			// NIP-44: Encrypted Direct Messages (kind 4)
 			if nip44.IsEncryptedDirectMessage(evt) {
 				recipientPubKey, found := nip44.GetRecipientPubKey(evt)
