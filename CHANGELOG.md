@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 - 2025-12-03
+
+### Implemented NIP-40: Event Expiration
+
+*   **Expiration Tag Support:**
+    *   Events can now include an `expiration` tag with a Unix timestamp.
+    *   Events with expiration timestamps in the past are rejected during publishing.
+    *   Expired events are filtered out from query responses and broadcasts.
+    *   Normal events without expiration tags continue to work as before.
+
 ## 0.4.0 - 2025-11-28
 
 ### Implemented NIP-17: Private Direct Messages  : 
