@@ -15,6 +15,7 @@ import (
 	"github.com/paul/glienicke/pkg/nips/nip09"
 	"github.com/paul/glienicke/pkg/nips/nip11"
 	"github.com/paul/glienicke/pkg/nips/nip40"
+	"github.com/paul/glienicke/pkg/nips/nip42"
 	"github.com/paul/glienicke/pkg/nips/nip44"
 	"github.com/paul/glienicke/pkg/nips/nip59"
 	"github.com/paul/glienicke/pkg/protocol"
@@ -22,7 +23,7 @@ import (
 )
 
 // Version of the relay
-const Version = "0.5.0"
+const Version = "0.6.0"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -55,7 +56,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Description:   "A Nostr relay written in Go",
 			Software:      "https://github.com/paul/glienicke",
 			Version:       r.version,
-			SupportedNIPs: []int{1, 9, 11, 17, 40, 44, 59},
+			SupportedNIPs: []int{1, 9, 11, 17, 40, 42, 44, 59},
 		}
 
 		w.Header().Set("Content-Type", "application/nostr+json")
@@ -88,6 +89,16 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // HandleEvent processes an EVENT message from a client
 func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.Event) error {
+	// NIP-42: Handle AUTH events
+	if nip42.IsAuthEvent(evt) {
+		if err := nip42.ValidateAuthEvent(evt); err != nil {
+			c.SendOK(evt.ID, false, fmt.Sprintf("invalid AUTH: %v", err))
+			return fmt.Errorf("invalid AUTH event: %w", err)
+		}
+		c.SendOK(evt.ID, true, "authenticated")
+		return nil
+	}
+
 	// NIP-40: Check for expired events
 	if nip40.ShouldRejectEvent(evt) {
 		c.SendOK(evt.ID, false, "event has expired")

@@ -107,7 +107,8 @@ glienicke/
 │   ├── protocol/           # WebSocket protocol handler
 │   ├── nips/               # NIP-specific implementations
 │   │   ├── nip09/          # NIP-09 (Event Deletion)
-│   │   └── nip11/          # NIP-11 (Relay Information Document)
+│   │   ├── nip11/          # NIP-11 (Relay Information Document)
+│   │   └── nip42/          # NIP-42 (Authentication)
 │   └── relay/              # Relay orchestrator
 ├── internal/
 │   ├── store/
@@ -137,15 +138,15 @@ glienicke/
 ## Implemented NIPs
 
 - **NIP-09: Event Deletions**: Handles `kind:5` events to delete referenced events, as specified in NIP-09.
-- **NIP-11: Relay Information Document**: Serves a JSON document at the relay's root URL containing metadata about the relay, including supported NIPs, name, description, and version.
+- **NIP-11: Relay Information Document**: Serves a JSON document at relay's root URL containing metadata about the relay, including supported NIPs, name, description, and version.
 - **NIP-17: Private Direct Messages**: 
   - **NIP-59 Gift Wrap**
   - **NIP-44 Encrypted Payloads (Versioned)**
 - **NIP-40: Event Expiration**: Supports `expiration` tag to automatically expire and filter events based on timestamp.
+- **NIP-42: Authentication**: Handles `kind:22242` AUTH events for client authentication with signature verification.
 
 ## Planned NIPs (thanks Jaromil)
 
-- NIP-42: Authentication
 - NIP-50: Search capability
 - NIP-56: Reporting
 - NIP-62: Vanish requests
