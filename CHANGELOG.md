@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0 - 2025-12-09
+
+### Implemented NIP-42: Authentication
+
+*   **AUTH Event Support:**
+    *   Relay now processes `EVENT` messages of kind 22242 (AUTH events).
+    *   AUTH events are validated for correct kind, non-empty content, and valid signature.
+    *   AUTH events are not stored but are used for client authentication.
+    *   Successful authentication returns an OK message with "authenticated" status.
+    *   Invalid AUTH events are rejected with appropriate error messages.
+
 ## 0.5.0 - 2025-12-03
 
 ### Implemented NIP-40: Event Expiration
