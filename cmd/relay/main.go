@@ -5,19 +5,26 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
-	"github.com/paul/glienicke/internal/store/memory"
+	"github.com/paul/glienicke/internal/store/sqlite"
 	"github.com/paul/glienicke/pkg/relay"
 )
 
-
 func main() {
 	addr := flag.String("addr", ":8080", "Address to listen on")
+	dbPath := flag.String("db", "relay.db", "Path to SQLite database (will be created if it doesn't exist)")
 	flag.Parse()
 
-	// Create in-memory store (use a persistent store in production)
-	store := memory.New()
+	// Autoconfigure SQLite storage
+	expandedPath := expandPath(*dbPath)
+	log.Printf("Using SQLite database: %s", expandedPath)
+
+	store, err := sqlite.New(expandedPath)
+	if err != nil {
+		log.Fatalf("Failed to initialize SQLite store: %v", err)
+	}
 	defer store.Close()
 
 	// Create relay
@@ -39,4 +46,20 @@ func main() {
 	// Wait for shutdown signal
 	<-sigCh
 	log.Println("Shutting down relay...")
+}
+
+// expandPath expands ~ to home directory and makes path absolute
+func expandPath(path string) string {
+	if len(path) > 0 && path[0] == '~' {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			path = filepath.Join(home, path[1:])
+		}
+	}
+
+	abs, err := filepath.Abs(path)
+	if err == nil {
+		return abs
+	}
+	return path
 }

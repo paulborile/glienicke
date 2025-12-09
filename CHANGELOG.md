@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.7.0 - 2025-12-09
+
+### SQLite Persistence with Autoconfiguration
+
+*   **Database Storage:**
+    *   Migrated from in-memory storage to SQLite for persistent data storage.
+    *   Events are now stored across relay restarts, preventing data loss.
+    *   SQLite database includes proper schema with indexes for efficient querying.
+
+*   **Autoconfiguration:**
+    *   Automatic database creation if no database file exists.
+    *   Opens and loads existing database if present.
+    *   New `-db` flag for custom database path (default: `relay.db`).
+    *   Supports path expansion (`~/path.db`) and relative/absolute paths.
+
+*   **Storage Architecture:**
+    *   Maintains clean storage interface - no changes to business logic.
+    *   SQLite implementation fully compatible with existing storage interface.
+    *   All existing tests pass without modification.
+
 ## 0.6.0 - 2025-12-09
 
 ### Implemented NIP-42: Authentication
