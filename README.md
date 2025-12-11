@@ -18,8 +18,11 @@ A modular Nostr relay implementation in Go with clean architecture and comprehen
 # Build the relay
 go build -o bin/relay ./cmd/relay
 
-# Run the relay
+# Run the relay (creates relay.db automatically)
 ./bin/relay -addr :8080
+
+# Run with custom database path
+./bin/relay -addr :8080 -db /path/to/myrelay.db
 ```
 
 Or run directly:
@@ -27,6 +30,15 @@ Or run directly:
 ```bash
 go run ./cmd/relay -addr :8080
 ```
+
+### Database Configuration
+
+The relay uses SQLite for persistent storage with autoconfiguration:
+
+- **Default**: Creates `relay.db` in current directory
+- **Custom path**: Use `-db` flag to specify database location
+- **Auto-create**: Database is created automatically if it doesn't exist
+- **Path expansion**: Supports `~/path.db`, relative and absolute paths
 
 ### Run Tests
 
@@ -67,6 +79,7 @@ The relay follows a black box modular design:
 - **`pkg/relay`**: Main relay orchestrator
 - **`pkg/nips`**: NIP-specific implementations (e.g., NIP-09, NIP-11)
 - **`internal/store/memory`**: In-memory storage (for testing)
+- **`internal/store/sqlite`**: SQLite storage implementation (production)
 
 ## Integration Tests
 
@@ -112,7 +125,8 @@ glienicke/
 │   └── relay/              # Relay orchestrator
 ├── internal/
 │   ├── store/
-│   │   └── memory/         # In-memory storage implementation
+│   │   ├── memory/         # In-memory storage implementation
+│   │   └── sqlite/         # SQLite storage implementation
 │   └── testutil/           # Test utilities (key generation, WS client)
 └── test/
     └── integration/        # Integration tests
