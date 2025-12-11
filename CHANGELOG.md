@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 - 2025-12-09
+## 0.8.0 - 2025-12-09
 
 ### SQLite Persistence with Autoconfiguration
 
@@ -19,6 +19,24 @@
     *   Maintains clean storage interface - no changes to business logic.
     *   SQLite implementation fully compatible with existing storage interface.
     *   All existing tests pass without modification.
+
+## 0.7.0 - 2025-12-11
+
+### Implemented NIP-50: Search Capability
+
+*   **Search Filter Support:**
+    *   Relay now supports the `search` field in REQ filter objects.
+    *   Full-text search across event content and tag values.
+    *   Support for basic search operators:
+        *   AND logic (multiple terms must all be present)
+        *   NOT logic (terms prefixed with `-` are excluded)
+        *   OR logic (using `OR` keyword between terms)
+    *   Support for search extensions:
+        *   `domain:` - filter by NIP-05 domain
+        *   `language:` - filter by language tag
+        *   `nsfw:` - filter content warning status
+    *   Search results are returned in order of storage query (future implementations may sort by relevance).
+    *   Search is integrated with existing filter criteria (kinds, authors, etc.).
 
 ## 0.6.0 - 2025-12-09
 
