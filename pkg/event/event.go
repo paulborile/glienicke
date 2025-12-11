@@ -23,13 +23,14 @@ type Event struct {
 
 // Filter represents a subscription filter as defined in NIP-01
 type Filter struct {
-	IDs     []string          `json:"ids,omitempty"`
-	Authors []string          `json:"authors,omitempty"`
-	Kinds   []int             `json:"kinds,omitempty"`
+	IDs     []string `json:"ids,omitempty"`
+	Authors []string `json:"authors,omitempty"`
+	Kinds   []int    `json:"kinds,omitempty"`
 	Tags    map[string][]string
-	Since   *int64            `json:"since,omitempty"`
-	Until   *int64            `json:"until,omitempty"`
-	Limit   *int              `json:"limit,omitempty"`
+	Since   *int64 `json:"since,omitempty"`
+	Until   *int64 `json:"until,omitempty"`
+	Limit   *int   `json:"limit,omitempty"`
+	Search  string `json:"search,omitempty"`
 }
 
 // UnmarshalJSON implements a custom unmarshaler for Filter

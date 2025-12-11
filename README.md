@@ -144,10 +144,10 @@ glienicke/
   - **NIP-44 Encrypted Payloads (Versioned)**
 - **NIP-40: Event Expiration**: Supports `expiration` tag to automatically expire and filter events based on timestamp.
 - **NIP-42: Authentication**: Handles `kind:22242` AUTH events for client authentication with signature verification.
+- **NIP-50: Search Capability**: Supports full-text search across event content and tags with support for basic operators (AND, OR, NOT) and extensions like domain filtering.
 
 ## Planned NIPs (thanks Jaromil)
 
-- NIP-50: Search capability
 - NIP-56: Reporting
 - NIP-62: Vanish requests
 - NIP-70: Protected events
