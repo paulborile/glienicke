@@ -17,13 +17,14 @@ import (
 	"github.com/paul/glienicke/pkg/nips/nip40"
 	"github.com/paul/glienicke/pkg/nips/nip42"
 	"github.com/paul/glienicke/pkg/nips/nip44"
+	"github.com/paul/glienicke/pkg/nips/nip50"
 	"github.com/paul/glienicke/pkg/nips/nip59"
 	"github.com/paul/glienicke/pkg/protocol"
 	"github.com/paul/glienicke/pkg/storage"
 )
 
 // Version of the relay
-const Version = "0.6.0"
+const Version = "0.7.0"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -56,7 +57,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Description:   "A Nostr relay written in Go",
 			Software:      "https://github.com/paul/glienicke",
 			Version:       r.version,
-			SupportedNIPs: []int{1, 9, 11, 17, 40, 42, 44, 59},
+			SupportedNIPs: []int{1, 9, 11, 17, 40, 42, 44, 50, 59},
 		}
 
 		w.Header().Set("Content-Type", "application/nostr+json")
@@ -155,10 +156,30 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 
 // HandleReq processes a REQ message from a client
 func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string, filters []*event.Filter) error {
-	// Query stored events matching filters
-	events, err := r.store.QueryEvents(ctx, filters)
-	if err != nil {
-		return fmt.Errorf("failed to query events: %w", err)
+	var events []*event.Event
+	var err error
+
+	// Check if any filter has search field (NIP-50)
+	hasSearch := false
+	for _, filter := range filters {
+		if filter.Search != "" {
+			hasSearch = true
+			break
+		}
+	}
+
+	if hasSearch {
+		// Use NIP-50 search
+		events, err = nip50.SearchEvents(ctx, r.store, filters)
+		if err != nil {
+			return fmt.Errorf("failed to search events: %w", err)
+		}
+	} else {
+		// Use regular query
+		events, err = r.store.QueryEvents(ctx, filters)
+		if err != nil {
+			return fmt.Errorf("failed to query events: %w", err)
+		}
 	}
 
 	// Send stored events to the client, filtering out expired events
