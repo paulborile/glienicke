@@ -45,6 +45,6 @@ func TestNIP11_RelayInformationDocument(t *testing.T) {
 	supportedNIPs, ok := infoDoc["supported_nips"].([]interface{})
 	assert.True(t, ok)
 
-	expectedNIPs := []float64{1, 2, 9, 11, 17, 40, 42, 44, 50, 59}
+	expectedNIPs := []float64{1, 2, 9, 11, 17, 40, 42, 44, 50, 59, 65}
 	assert.ElementsMatch(t, expectedNIPs, supportedNIPs)
 }

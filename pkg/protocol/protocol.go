@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -89,7 +90,10 @@ func (c *Client) readPump(ctx context.Context) {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WebSocket read error: %v", err)
+				// Don't log close 1005 (no status) as an error - it's a normal condition
+				if !strings.Contains(err.Error(), "close 1005") {
+					log.Printf("WebSocket read error: %v", err)
+				}
 			}
 			return
 		}
