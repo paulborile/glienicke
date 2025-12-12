@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.10.0 - 2025-12-12
+
+### Implemented NIP-65: Relay List Metadata
+
+*   **Relay List Support (Kind 10002 Events):**
+    *   Relay now supports NIP-65 relay list metadata events (kind 10002).
+    *   Relay lists contain `r` tags specifying relay URLs with optional read/write markers.
+    *   Content field must be empty for valid relay list events.
+    *   Supports default relays (read+write), read-only relays, and write-only relays.
+
+*   **Read/Write Markers:**
+    *   Relays without a marker default to both read and write access.
+    *   `read` marker indicates relay is used only for reading events about the user.
+    *   `write` marker indicates relay is used only for publishing events by the user.
+    *   Unknown markers are treated as default (read+write) for forward compatibility.
+
+*   **Validation and Error Handling:**
+    *   Relay list events are validated for correct structure and content.
+    *   Relay URLs must be non-empty and should start with `ws://` or `wss://`.
+    *   Invalid relay lists are rejected with descriptive error messages.
+    *   Relay lists must contain at least one valid `r` tag.
+
+*   **Utility Functions:**
+    *   `ExtractReadRelays()` - Extract read relay URLs from relay list events.
+    *   `ExtractWriteRelays()` - Extract write relay URLs from relay list events.
+    *   `ExtractAllRelays()` - Extract all relay URLs from relay list events.
+    *   `ExtractRelayInfo()` - Extract detailed relay information with read/write flags.
+
+*   **Integration:**
+    *   NIP-65 support is now advertised in relay information documents.
+    *   Relay list events integrate seamlessly with existing event query and broadcast systems.
+    *   Comprehensive unit and integration tests ensure correct behavior.
+
 ## 0.9.0 - 2025-12-12
 
 ### Implemented NIP-02: Follow Lists
