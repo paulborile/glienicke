@@ -11,22 +11,22 @@ func TestEvent_Validate(t *testing.T) {
 	validEvent, _ := testutil.MustNewTestEvent(1, "test content", nil)
 
 	tests := []struct {
-		name    string
-		event   *event.Event
+		name      string
+		event     *event.Event
 		expectErr bool
 	}{
 		{
-			name:    "valid event",
-			event:   validEvent,
+			name:      "valid event",
+			event:     validEvent,
 			expectErr: false,
 		},
 		{
 			name: "missing pubkey",
 			event: &event.Event{
-				Kind:      validEvent.Kind,
-				Tags:      validEvent.Tags,
-				Content:   validEvent.Content,
-				Sig:       validEvent.Sig,
+				Kind:    validEvent.Kind,
+				Tags:    validEvent.Tags,
+				Content: validEvent.Content,
+				Sig:     validEvent.Sig,
 			},
 			expectErr: true,
 		},
@@ -89,135 +89,135 @@ func TestEvent_Matches(t *testing.T) {
 	evt4, _ := testutil.NewTestEventWithKey(kp2, 3, "content 4", [][]string{{"p", kp1.PubKeyHex}, {"t", "another"}})
 
 	tests := []struct {
-		name    string
-		event   *event.Event
-		filter  *event.Filter
+		name     string
+		event    *event.Event
+		filter   *event.Filter
 		expected bool
 	}{
 		{
-			name:    "match by ID",
-			event:   evt1,
-			filter:  &event.Filter{IDs: []string{evt1.ID}},
+			name:     "match by ID",
+			event:    evt1,
+			filter:   &event.Filter{IDs: []string{evt1.ID}},
 			expected: true,
 		},
 		{
-			name:    "no match by ID",
-			event:   evt1,
-			filter:  &event.Filter{IDs: []string{evt2.ID}},
+			name:     "no match by ID",
+			event:    evt1,
+			filter:   &event.Filter{IDs: []string{evt2.ID}},
 			expected: false,
 		},
 		{
-			name:    "match by ID prefix",
-			event:   evt1,
-			filter:  &event.Filter{IDs: []string{evt1.ID[:8]}},
+			name:     "match by ID prefix",
+			event:    evt1,
+			filter:   &event.Filter{IDs: []string{evt1.ID[:8]}},
 			expected: true,
 		},
 		{
-			name:    "match by author",
-			event:   evt1,
-			filter:  &event.Filter{Authors: []string{kp1.PubKeyHex}},
+			name:     "match by author",
+			event:    evt1,
+			filter:   &event.Filter{Authors: []string{kp1.PubKeyHex}},
 			expected: true,
 		},
 		{
-			name:    "no match by author",
-			event:   evt1,
-			filter:  &event.Filter{Authors: []string{kp2.PubKeyHex}},
+			name:     "no match by author",
+			event:    evt1,
+			filter:   &event.Filter{Authors: []string{kp2.PubKeyHex}},
 			expected: false,
 		},
 		{
-			name:    "match by author prefix",
-			event:   evt1,
-			filter:  &event.Filter{Authors: []string{kp1.PubKeyHex[:8]}},
+			name:     "match by author prefix",
+			event:    evt1,
+			filter:   &event.Filter{Authors: []string{kp1.PubKeyHex[:8]}},
 			expected: true,
 		},
 		{
-			name:    "match by kind",
-			event:   evt1,
-			filter:  &event.Filter{Kinds: []int{1}},
+			name:     "match by kind",
+			event:    evt1,
+			filter:   &event.Filter{Kinds: []int{1}},
 			expected: true,
 		},
 		{
-			name:    "no match by kind",
-			event:   evt1,
-			filter:  &event.Filter{Kinds: []int{2}},
+			name:     "no match by kind",
+			event:    evt1,
+			filter:   &event.Filter{Kinds: []int{2}},
 			expected: false,
 		},
 		{
-			name:    "match by #e tag",
-			event:   evt3,
-			filter:  &event.Filter{Tags: map[string][]string{"e": {evt1.ID}}},
+			name:     "match by #e tag",
+			event:    evt3,
+			filter:   &event.Filter{Tags: map[string][]string{"e": {evt1.ID}}},
 			expected: true,
 		},
 		{
-			name:    "match by #e tag prefix",
-			event:   evt3,
-			filter:  &event.Filter{Tags: map[string][]string{"e": {evt1.ID[:8]}}},
+			name:     "match by #e tag prefix",
+			event:    evt3,
+			filter:   &event.Filter{Tags: map[string][]string{"e": {evt1.ID[:8]}}},
 			expected: true,
 		},
 		{
-			name:    "no match by #e tag",
-			event:   evt3,
-			filter:  &event.Filter{Tags: map[string][]string{"e": {evt2.ID}}},
+			name:     "no match by #e tag",
+			event:    evt3,
+			filter:   &event.Filter{Tags: map[string][]string{"e": {evt2.ID}}},
 			expected: false,
 		},
 		{
-			name:    "match by #p tag",
-			event:   evt4,
-			filter:  &event.Filter{Tags: map[string][]string{"p": {kp1.PubKeyHex}}},
+			name:     "match by #p tag",
+			event:    evt4,
+			filter:   &event.Filter{Tags: map[string][]string{"p": {kp1.PubKeyHex}}},
 			expected: true,
 		},
 		{
-			name:    "match by #p tag prefix",
-			event:   evt4,
-			filter:  &event.Filter{Tags: map[string][]string{"p": {kp1.PubKeyHex[:8]}}},
+			name:     "match by #p tag prefix",
+			event:    evt4,
+			filter:   &event.Filter{Tags: map[string][]string{"p": {kp1.PubKeyHex[:8]}}},
 			expected: true,
 		},
 		{
-			name:    "no match by #p tag",
-			event:   evt4,
-			filter:  &event.Filter{Tags: map[string][]string{"p": {kp2.PubKeyHex}}},
+			name:     "no match by #p tag",
+			event:    evt4,
+			filter:   &event.Filter{Tags: map[string][]string{"p": {kp2.PubKeyHex}}},
 			expected: false,
 		},
 		{
-			name:    "match by multiple filters (AND logic)",
-			event:   evt3,
-			filter:  &event.Filter{Kinds: []int{1}, Tags: map[string][]string{"e": {evt1.ID}}},
+			name:     "match by multiple filters (AND logic)",
+			event:    evt3,
+			filter:   &event.Filter{Kinds: []int{1}, Tags: map[string][]string{"e": {evt1.ID}}},
 			expected: true,
 		},
 		{
-			name:    "no match by multiple filters (AND logic)",
-			event:   evt3,
-			filter:  &event.Filter{Kinds: []int{2}, Tags: map[string][]string{"e": {evt1.ID}}},
+			name:     "no match by multiple filters (AND logic)",
+			event:    evt3,
+			filter:   &event.Filter{Kinds: []int{2}, Tags: map[string][]string{"e": {evt1.ID}}},
 			expected: false,
 		},
 		{
-			name:    "match by since",
-			event:   evt1,
-			filter:  &event.Filter{Since: int64Ptr(evt1.CreatedAt - 1)},
+			name:     "match by since",
+			event:    evt1,
+			filter:   &event.Filter{Since: int64Ptr(evt1.CreatedAt - 1)},
 			expected: true,
 		},
 		{
-			name:    "no match by since",
-			event:   evt1,
-			filter:  &event.Filter{Since: int64Ptr(evt1.CreatedAt + 1)},
+			name:     "no match by since",
+			event:    evt1,
+			filter:   &event.Filter{Since: int64Ptr(evt1.CreatedAt + 1)},
 			expected: false,
 		},
 		{
-			name:    "match by until",
-			event:   evt1,
-			filter:  &event.Filter{Until: int64Ptr(evt1.CreatedAt + 1)},
+			name:     "match by until",
+			event:    evt1,
+			filter:   &event.Filter{Until: int64Ptr(evt1.CreatedAt + 1)},
 			expected: true,
 		},
 		{
-			name:    "no match by until",
-			event:   evt1,
-			filter:  &event.Filter{Until: int64Ptr(evt1.CreatedAt - 1)},
+			name:     "no match by until",
+			event:    evt1,
+			filter:   &event.Filter{Until: int64Ptr(evt1.CreatedAt - 1)},
 			expected: false,
 		},
 		{
-			name:    "match by limit (not directly testable in Matches)",
-			event:   evt1,
-			filter:  &event.Filter{Limit: intPtr(1)},
+			name:     "match by limit (not directly testable in Matches)",
+			event:    evt1,
+			filter:   &event.Filter{Limit: intPtr(1)},
 			expected: true,
 		},
 	}

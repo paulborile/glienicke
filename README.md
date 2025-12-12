@@ -119,6 +119,7 @@ glienicke/
 │   ├── storage/            # Storage interface
 │   ├── protocol/           # WebSocket protocol handler
 │   ├── nips/               # NIP-specific implementations
+│   │   ├── nip02/          # NIP-02 (Follow Lists)
 │   │   ├── nip09/          # NIP-09 (Event Deletion)
 │   │   ├── nip11/          # NIP-11 (Relay Information Document)
 │   │   └── nip42/          # NIP-42 (Authentication)
@@ -151,6 +152,7 @@ glienicke/
 
 ## Implemented NIPs
 
+- **NIP-02: Follow Lists**: Handles `kind:3` follow list events with proper validation and replaceable event support. Includes support for petnames and relay hints in `p` tags.
 - **NIP-09: Event Deletions**: Handles `kind:5` events to delete referenced events, as specified in NIP-09.
 - **NIP-11: Relay Information Document**: Serves a JSON document at relay's root URL containing metadata about the relay, including supported NIPs, name, description, and version.
 - **NIP-17: Private Direct Messages**: 
@@ -161,6 +163,11 @@ glienicke/
 - **NIP-50: Search Capability**: Supports full-text search across event content and tags with support for basic operators (AND, OR, NOT) and extensions like domain filtering.
 
 ## Planned NIPs
+
+For compliance with gossip : 
+- NIP-65: Relay List Metadata
+- NIP-56 Reporting
+- NIP-62 Vanish requests
 
 - NIP-56: Reporting
 - NIP-62: Vanish requests

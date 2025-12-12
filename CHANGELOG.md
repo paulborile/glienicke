@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.9.0 - 2025-12-12
+
+### Implemented NIP-02: Follow Lists
+
+*   **Follow List Support (Kind 3 Events):**
+    *   Relay now supports NIP-02 follow list events (kind 3).
+    *   Follow lists contain `p` tags specifying followed users with optional relay URLs and petnames.
+    *   Content field must be empty for valid follow list events.
+    *   Comprehensive validation ensures proper `p` tag format and pubkey validation.
+
+*   **Replaceable Event Handling:**
+    *   Follow lists are replaceable events - new follow lists replace older ones from the same author.
+    *   Storage layer properly handles replaceable events (kinds 0, 3, 10000-19999).
+    *   Only the most recent follow list for each user is stored and returned.
+
+*   **Validation and Error Handling:**
+    *   Follow list events are validated for correct structure and content.
+    *   Invalid follow lists are rejected with descriptive error messages.
+    *   Follow lists must contain at least one valid `p` tag.
+
+*   **Integration:**
+    *   NIP-02 support is now advertised in relay information documents.
+    *   Follow list events integrate seamlessly with existing event query and broadcast systems.
+    *   Comprehensive integration tests ensure correct behavior.
+
 ## 0.8.0 - 2025-12-09
 
 ### SQLite Persistence with Autoconfiguration

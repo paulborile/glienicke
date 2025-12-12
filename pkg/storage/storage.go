@@ -8,6 +8,7 @@ import (
 )
 
 var ErrNotFound = errors.New("event not found")
+
 // Store defines the interface for event storage
 // Implementations can use any backend (postgres, sqlite, memory, etc.)
 type Store interface {

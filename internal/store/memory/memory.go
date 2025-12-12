@@ -39,9 +39,34 @@ func (s *Store) SaveEvent(ctx context.Context, evt *event.Event) error {
 		return fmt.Errorf("event has been deleted")
 	}
 
+	// Handle replaceable events (NIP-01)
+	// Replaceable events include: kind 0 (metadata), kind 3 (contact list), kind 10000-20000
+	if s.isReplaceableEvent(evt) {
+		// Remove existing events with same author and kind
+		for id, existingEvt := range s.events {
+			if !s.deleted[id] && existingEvt.PubKey == evt.PubKey && existingEvt.Kind == evt.Kind {
+				// Replace with the newer event
+				if evt.CreatedAt >= existingEvt.CreatedAt {
+					s.deleted[id] = true // Mark old one as deleted
+				} else {
+					// This event is older, don't store it
+					return nil
+				}
+			}
+		}
+	}
+
 	// Store event
 	s.events[evt.ID] = evt
 	return nil
+}
+
+// isReplaceableEvent checks if an event is replaceable according to NIP-01
+func (s *Store) isReplaceableEvent(evt *event.Event) bool {
+	// Kind 0: Metadata (NIP-01)
+	// Kind 3: Contact List (NIP-02)
+	// Parameterized replaceable events: 10000 <= kind < 20000
+	return evt.Kind == 0 || evt.Kind == 3 || (evt.Kind >= 10000 && evt.Kind < 20000)
 }
 
 // QueryEvents retrieves events matching the filters

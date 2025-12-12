@@ -65,8 +65,8 @@ Every new feature implemented will follow these steps :
 
 1. Identify features of the new NIP to be implemented
 2. Write an integrations test for the new feature : at this stage the test should fail
-3. Implement the features : if nostr specific features are needed check if available in github.com/nbd-wtf/go-nostr, otherwise implement. Keep dependency from external code at minimum
-4. Run the integration test / debug / fix / until the integration test works
+3. Implement the features : if nostr specific features are needed check if available in github.com/nbd-wtf/go-nostr, otherwise implement. Keep dependency from external code at minimum, implement unit tests for new features
+4. Run unit and integration test / debug / fix / until the both test work without failures
 5. Bump the version, update README and CHANGELOG
 6. Commit and create pull request
 

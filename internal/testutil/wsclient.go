@@ -165,42 +165,45 @@ func (c *WSClient) ExpectEvent(subID string, timeout time.Duration) (*event.Even
 			return nil, err
 		}
 
-		        return &evt, nil
-		    }
+		return &evt, nil
+	}
+}
+
+// ExpectEOSE waits for an EOSE message for the given subscription
+
+// ExpectEOSE waits for an EOSE message for the given subscription
+func (c *WSClient) ExpectEOSE(subID string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	c.conn.SetReadDeadline(deadline)
+	defer c.conn.SetReadDeadline(time.Time{})
+
+	for {
+		msg, err := c.ReadMessage()
+		if err != nil {
+			return err
 		}
-		
-		// ExpectEOSE waits for an EOSE message for the given subscription
-		func (c *WSClient) ExpectEOSE(subID string, timeout time.Duration) error {
-		    deadline := time.Now().Add(timeout)
-		    c.conn.SetReadDeadline(deadline)
-		    defer c.conn.SetReadDeadline(time.Time{})
-		
-		    for {
-		        msg, err := c.ReadMessage()
-		        if err != nil {
-		            return err
-		        }
-		
-		        if len(msg) < 2 {
-		            continue
-		        }
-		
-		        msgType, ok := msg[0].(string)
-		        if !ok || msgType != "EOSE" {
-		            continue
-		        }
-		
-		        receivedSubID, ok := msg[1].(string)
-		        if !ok || receivedSubID != subID {
-		            continue
-		        }
-		
-		        return nil
-		    }
+
+		if len(msg) < 2 {
+			continue
 		}
-		
-		// ExpectNotice waits for a NOTICE message
-		func (c *WSClient) ExpectNotice(timeout time.Duration) (string, error) {	deadline := time.Now().Add(timeout)
+
+		msgType, ok := msg[0].(string)
+		if !ok || msgType != "EOSE" {
+			continue
+		}
+
+		receivedSubID, ok := msg[1].(string)
+		if !ok || receivedSubID != subID {
+			continue
+		}
+
+		return nil
+	}
+}
+
+// ExpectNotice waits for a NOTICE message
+func (c *WSClient) ExpectNotice(timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
 	c.conn.SetReadDeadline(deadline)
 	defer c.conn.SetReadDeadline(time.Time{})
 

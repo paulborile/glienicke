@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/paul/glienicke/pkg/event"
+	"github.com/paul/glienicke/pkg/nips/nip02"
 	"github.com/paul/glienicke/pkg/nips/nip09"
 	"github.com/paul/glienicke/pkg/nips/nip11"
 	"github.com/paul/glienicke/pkg/nips/nip40"
@@ -24,7 +25,7 @@ import (
 )
 
 // Version of the relay
-const Version = "0.8.0"
+const Version = "0.9.0"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -57,7 +58,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Description:   "A Nostr relay written in Go",
 			Software:      "https://github.com/paul/glienicke",
 			Version:       r.version,
-			SupportedNIPs: []int{1, 9, 11, 17, 40, 42, 44, 50, 59},
+			SupportedNIPs: []int{1, 2, 9, 11, 17, 40, 42, 44, 50, 59},
 		}
 
 		w.Header().Set("Content-Type", "application/nostr+json")
@@ -98,6 +99,14 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 		}
 		c.SendOK(evt.ID, true, "authenticated")
 		return nil
+	}
+
+	// NIP-02: Validate follow list events
+	if nip02.IsFollowListEvent(evt) {
+		if err := nip02.ValidateFollowList(evt); err != nil {
+			c.SendOK(evt.ID, false, fmt.Sprintf("invalid follow list: %v", err))
+			return fmt.Errorf("invalid follow list event: %w", err)
+		}
 	}
 
 	// NIP-40: Check for expired events
