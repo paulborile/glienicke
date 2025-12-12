@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.12.0 - 2025-12-12
+
+### Implemented NIP-62: Request to Vanish
+
+*   **Request to Vanish Support (Kind 62 Events):**
+    *   Relay now supports NIP-62 Request to Vanish events (kind 62).
+    *   Request to Vanish allows users to request complete deletion of all their events from a relay.
+    *   Supports both relay-specific requests and global requests (ALL_RELAYS).
+    *   Content field may include a reason or legal notice for the deletion request.
+
+*   **Relay-Specific Deletion:**
+    *   Events with `["relay", "relay-url"]` tags request deletion from specific relays.
+    *   Relays only process requests that explicitly include their URL.
+    *   Requests for other relays are ignored but still accepted and stored.
+
+*   **Global Deletion Requests:**
+    *   Events with `["relay", "ALL_RELAYS"]` tags request deletion from all relays.
+    *   All relays should process such requests regardless of their specific URL.
+    *   Global requests enable coordinated deletion across the Nostr network.
+
+*   **Complete Event Deletion:**
+    *   When processed, all events from the requesting pubkey are permanently deleted.
+    *   This includes all event types and kinds from the specified public key.
+    *   Deleted events cannot be recovered or re-broadcasted to the relay.
+    *   The relay may store the signed Request to Vanish for bookkeeping purposes.
+
+*   **Validation and Security:**
+    *   Request to Vanish events must include at least one `relay` tag.
+    *   Relay tag values cannot be empty or consist only of whitespace.
+    *   Events are validated for correct structure before processing.
+    *   Only the pubkey owner can create valid Request to Vanish events (via signature verification).
+
+*   **Storage Interface Extensions:**
+    *   Added `DeleteAllEventsByPubKey()` method to storage interface.
+    *   Implemented for both memory and SQLite storage backends.
+    *   Efficient bulk deletion operations for handling large pubkey event sets.
+
+*   **Utility Functions:**
+    *   `IsRequestToVanishEvent()` - Checks if an event is a Request to Vanish.
+    *   `ValidateRequestToVanish()` - validates Request to Vanish events.
+    *   `HandleRequestToVanish()` - Processes deletion requests for specific relays.
+    *   `IsGlobalRequest()` - Identifies global (ALL_RELAYS) deletion requests.
+    *   `GetRelayTags()` - Extracts all relay URLs from Request to Vanish events.
+
+*   **Integration:**
+    *   NIP-62 support is now advertised in relay information documents.
+    *   Request to Vanish events integrate seamlessly with existing event validation.
+    *   Comprehensive unit and integration tests ensure correct behavior and security.
+
 ## 0.11.0 - 2025-12-12
 
 ### Implemented NIP-56: Reporting

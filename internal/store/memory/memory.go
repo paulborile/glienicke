@@ -130,6 +130,21 @@ func (s *Store) DeleteEvent(ctx context.Context, eventID string, deleterPubKey s
 	return nil
 }
 
+// DeleteAllEventsByPubKey deletes all events from a specific pubkey (NIP-62)
+func (s *Store) DeleteAllEventsByPubKey(ctx context.Context, pubkey string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Mark all events from the pubkey as deleted
+	for id, evt := range s.events {
+		if evt.PubKey == pubkey {
+			s.deleted[id] = true
+		}
+	}
+
+	return nil
+}
+
 // GetEvent retrieves a single event by ID
 func (s *Store) GetEvent(ctx context.Context, eventID string) (*event.Event, error) {
 	s.mu.RLock()

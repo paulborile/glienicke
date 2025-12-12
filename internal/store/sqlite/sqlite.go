@@ -351,6 +351,44 @@ func (s *Store) DeleteEvent(ctx context.Context, eventID string, deleterPubKey s
 	return nil
 }
 
+// DeleteAllEventsByPubKey deletes all events from a specific pubkey (NIP-62)
+func (s *Store) DeleteAllEventsByPubKey(ctx context.Context, pubkey string) error {
+	// Get all event IDs from the pubkey
+	rows, err := s.db.QueryContext(ctx, "SELECT id FROM events WHERE pubkey = ?", pubkey)
+	if err != nil {
+		return fmt.Errorf("failed to query events for pubkey: %w", err)
+	}
+	defer rows.Close()
+
+	var eventIDs []string
+	for rows.Next() {
+		var eventID string
+		if err := rows.Scan(&eventID); err != nil {
+			return fmt.Errorf("failed to scan event ID: %w", err)
+		}
+		eventIDs = append(eventIDs, eventID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating events: %w", err)
+	}
+
+	// Mark all events as deleted
+	if len(eventIDs) > 0 {
+		// This is a bit tricky with SQLite, so we'll do individual inserts
+		for _, eventID := range eventIDs {
+			_, err := s.db.ExecContext(ctx,
+				"INSERT OR IGNORE INTO deleted_events (id, deleter_pubkey, deleted_at) VALUES (?, ?, ?)",
+				eventID, pubkey, time.Now().Unix())
+			if err != nil {
+				return fmt.Errorf("failed to mark event %s as deleted: %w", eventID, err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // GetEvent retrieves a single event by ID
 func (s *Store) GetEvent(ctx context.Context, eventID string) (*event.Event, error) {
 	// Check if event is deleted

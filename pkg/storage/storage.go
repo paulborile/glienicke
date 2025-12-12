@@ -23,6 +23,9 @@ type Store interface {
 	// deleterPubKey is the pubkey of the entity requesting deletion
 	DeleteEvent(ctx context.Context, eventID string, deleterPubKey string) error
 
+	// DeleteAllEventsByPubKey deletes all events from a specific pubkey (NIP-62)
+	DeleteAllEventsByPubKey(ctx context.Context, pubkey string) error
+
 	// GetEvent retrieves a single event by ID
 	GetEvent(ctx context.Context, eventID string) (*event.Event, error)
 
