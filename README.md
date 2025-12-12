@@ -123,7 +123,9 @@ glienicke/
 │   │   ├── nip09/          # NIP-09 (Event Deletion)
 │   │   ├── nip11/          # NIP-11 (Relay Information Document)
 │   │   ├── nip42/          # NIP-42 (Authentication)
+│   │   ├── nip45/          # NIP-45 (Event Counts)
 │   │   ├── nip56/          # NIP-56 (Reporting)
+│   │   ├── nip62/          # NIP-62 (Request to Vanish)
 │   │   └── nip65/          # NIP-65 (Relay List Metadata)
 │   └── relay/              # Relay orchestrator
 ├── internal/
@@ -162,15 +164,64 @@ glienicke/
   - **NIP-44 Encrypted Payloads (Versioned)**
 - **NIP-40: Event Expiration**: Supports `expiration` tag to automatically expire and filter events based on timestamp.
 - **NIP-42: Authentication**: Handles `kind:22242` AUTH events for client authentication with signature verification.
+- **NIP-45: Event Counts**: Supports COUNT message type for efficient event counting with filters, returning `{"count": <integer>}` responses for performance optimization.
 - **NIP-50: Search Capability**: Supports full-text search across event content and tags with support for basic operators (AND, OR, NOT) and extensions like domain filtering.
 - **NIP-56: Reporting**: Handles `kind:1984` report events for flagging objectionable content including profiles, notes, and blobs with full validation support.
+- **NIP-62: Request to Vanish**: Handles `kind:62` events for requesting complete deletion of all events from a specific pubkey, supporting both relay-specific and global deletion requests.
 - **NIP-65: Relay List Metadata**: Handles `kind:10002` relay list events for advertising preferred relays with read/write markers and proper validation.
+
+## Testing
+
+### Comprehensive Test Coverage
+
+The project includes extensive testing at multiple levels:
+
+#### **Unit Tests**
+- **Storage Layer**: Comprehensive unit tests for both memory and SQLite storage backends
+  - CRUD operations (Create, Read, Update, Delete)
+  - Event filtering and querying
+  - NIP-45 COUNT functionality
+  - NIP-62 bulk deletion operations
+  - Replaceable events handling
+  - Concurrent access and thread safety
+  - Data persistence and edge cases
+- **Event Validation**: Unit tests for NIP implementations
+- **Protocol Layer**: Message handling and parsing tests
+
+#### **Integration Tests**
+- Full protocol testing with real WebSocket connections
+- NIP compliance validation for all implemented NIPs
+- End-to-end event flow testing
+- Relay Information Document (NIP-11) verification
+
+#### **Test Commands**
+
+```bash
+# Run all tests
+go test ./...
+
+# Run storage unit tests specifically
+go test ./internal/store/memory/ -v
+go test ./internal/store/sqlite/ -v
+
+# Run integration tests only
+go test ./test/integration/... -v
+
+# Run with race detection
+go test -race ./...
+
+# Clean test cache (recommended after major changes)
+go clean -testcache
+```
+
+#### **Test Coverage**
+- **Memory Storage**: 17 test functions covering all major functionality
+- **SQLite Storage**: 16 test functions with real database behavior validation
+- **Integration Tests**: Tests for all implemented NIPs (01, 02, 09, 11, 17, 40, 42, 44, 45, 50, 56, 62, 65)
 
 ## Planned NIPs
 
-For compliance with gossip :
-- NIP-62 Vanish requests
-
+For compliance with gossip:
 - NIP-70: Protected events
 - NIP-77: Negentropy sync
 

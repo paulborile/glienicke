@@ -28,4 +28,7 @@ type Store interface {
 
 	// Close closes the storage connection
 	Close() error
+
+	// CountEvents returns the count of events matching the filters
+	CountEvents(ctx context.Context, filters []*event.Filter) (int, error)
 }

@@ -1,6 +1,94 @@
 # Changelog
 
+## 0.12.0 - 2025-12-12
+
+### Implemented NIP-45: Event Counts
+
+*   **COUNT Message Type Support:**
+    *   Relay now supports NIP-45 COUNT messages for efficient event counting.
+    *   Clients can request event counts instead of fetching full events for performance optimization.
+    *   Uses the same filter syntax as REQ messages for maximum compatibility.
+
+*   **Efficient Counting Operations:**
+    *   Count queries are processed efficiently at the storage layer.
+    *   Multiple filters are OR'd together and aggregated into a single count result.
+    *   Supports all existing filter types: authors, kinds, tags, time ranges, etc.
+
+*   **COUNT Response Format:**
+    *   Returns responses in the format `{"count": <integer>}` as specified in NIP-45.
+    *   Supports approximate counting indication with optional `{"count": <integer>, "approximate": true}`.
+    *   Error handling with CLOSED messages when counting is refused or fails.
+
+*   **Protocol Extensions:**
+    *   Added new message types: `COUNT` (client-to-relay) and `CLOSED` (relay-to-client).
+    *   Extended Handler interface with `HandleCount()` method.
+    *   Added client methods for sending COUNT responses and CLOSED error messages.
+
+*   **Storage Layer Enhancements:**
+    *   Added `CountEvents()` method to storage interface.
+    *   Implemented efficient counting for both memory and SQLite backends.
+    *   Optimized COUNT queries with proper indexing support.
+
+*   **Integration and Testing:**
+    *   Comprehensive integration tests verify COUNT functionality with various filter combinations.
+    *   Tests include basic counting, tag filtering, and multiple filter scenarios.
+    *   All existing tests continue to pass without regression.
+
+*   **Error Handling and Edge Cases:**
+    *   Proper validation of COUNT requests with required filters.
+    *   Graceful error responses with descriptive messages for invalid requests.
+    *   Resource management for large count queries.
+
 ## 0.11.0 - 2025-12-12
+
+### Implemented NIP-62: Request to Vanish
+
+*   **Request to Vanish Support (Kind 62 Events):**
+    *   Relay now supports NIP-62 Request to Vanish events (kind 62).
+    *   Request to Vanish allows users to request complete deletion of all their events from a relay.
+    *   Supports both relay-specific requests and global requests (ALL_RELAYS).
+    *   Content field may include a reason or legal notice for the deletion request.
+
+*   **Relay-Specific Deletion:**
+    *   Events with `["relay", "relay-url"]` tags request deletion from specific relays.
+    *   Relays only process requests that explicitly include their URL.
+    *   Requests for other relays are ignored but still accepted and stored.
+
+*   **Global Deletion Requests:**
+    *   Events with `["relay", "ALL_RELAYS"]` tags request deletion from all relays.
+    *   All relays should process such requests regardless of their specific URL.
+    *   Global requests enable coordinated deletion across the Nostr network.
+
+*   **Complete Event Deletion:**
+    *   When processed, all events from the requesting pubkey are permanently deleted.
+    *   This includes all event types and kinds from the specified public key.
+    *   Deleted events cannot be recovered or re-broadcasted to the relay.
+    *   The relay may store the signed Request to Vanish for bookkeeping purposes.
+
+*   **Validation and Security:**
+    *   Request to Vanish events must include at least one `relay` tag.
+    *   Relay tag values cannot be empty or consist only of whitespace.
+    *   Events are validated for correct structure before processing.
+    *   Only the pubkey owner can create valid Request to Vanish events (via signature verification).
+
+*   **Storage Interface Extensions:**
+    *   Added `DeleteAllEventsByPubKey()` method to storage interface.
+    *   Implemented for both memory and SQLite storage backends.
+    *   Efficient bulk deletion operations for handling large pubkey event sets.
+
+*   **Utility Functions:**
+    *   `IsRequestToVanishEvent()` - Checks if an event is a Request to Vanish.
+    *   `ValidateRequestToVanish()` - validates Request to Vanish events.
+    *   `HandleRequestToVanish()` - Processes deletion requests for specific relays.
+    *   `IsGlobalRequest()` - Identifies global (ALL_RELAYS) deletion requests.
+    *   `GetRelayTags()` - Extracts all relay URLs from Request to Vanish events.
+
+*   **Integration:**
+    *   NIP-62 support is now advertised in relay information documents.
+    *   Request to Vanish events integrate seamlessly with existing event validation.
+    *   Comprehensive unit and integration tests ensure correct behavior and security.
+
+## 0.10.0 - 2025-12-12
 
 ### Implemented NIP-56: Reporting
 

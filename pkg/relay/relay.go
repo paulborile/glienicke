@@ -26,7 +26,7 @@ import (
 )
 
 // Version of the relay
-const Version = "0.10.0"
+const Version = "0.12.0"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -59,7 +59,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Description:   "A Nostr relay written in Go",
 			Software:      "https://github.com/paul/glienicke",
 			Version:       r.version,
-			SupportedNIPs: []int{1, 2, 9, 11, 17, 40, 42, 44, 50, 59, 65},
+			SupportedNIPs: []int{1, 2, 9, 11, 17, 40, 42, 44, 45, 50, 59, 62, 65},
 		}
 
 		w.Header().Set("Content-Type", "application/nostr+json")
@@ -225,6 +225,34 @@ func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string,
 func (r *Relay) HandleClose(ctx context.Context, c *protocol.Client, subID string) error {
 	log.Printf("Closing subscription %s for client %s", subID, c.RemoteAddr())
 	c.RemoveSubscription(subID)
+	return nil
+}
+
+// HandleCount processes a COUNT message from a client (NIP-45)
+func (r *Relay) HandleCount(ctx context.Context, c *protocol.Client, countID string, filters []*event.Filter) error {
+	log.Printf("Received COUNT request %s from client %s", countID, c.RemoteAddr())
+
+	// Validate filters
+	if len(filters) == 0 {
+		c.SendClosed(countID, "error: no filters provided")
+		return fmt.Errorf("COUNT request requires at least one filter")
+	}
+
+	// Get count from storage
+	count, err := r.store.CountEvents(ctx, filters)
+	if err != nil {
+		c.SendClosed(countID, fmt.Sprintf("error: failed to count events: %v", err))
+		return fmt.Errorf("failed to count events: %w", err)
+	}
+
+	// Send count response
+	// For now, we don't implement approximate counting, but could be added later for performance
+	err = c.SendCount(countID, count, false)
+	if err != nil {
+		return fmt.Errorf("failed to send COUNT response: %w", err)
+	}
+
+	log.Printf("COUNT request %s returned %d events", countID, count)
 	return nil
 }
 

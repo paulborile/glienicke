@@ -23,6 +23,8 @@ const (
 	MessageTypeOK     MessageType = "OK"     // Command result
 	MessageTypeNotice MessageType = "NOTICE" // Human-readable message
 	MessageTypeAuth   MessageType = "AUTH"   // NIP-42 authentication
+	MessageTypeCount  MessageType = "COUNT"  // NIP-45 event counting
+	MessageTypeClosed MessageType = "CLOSED" // NIP-45 count rejection
 )
 
 // Handler processes Nostr protocol messages
@@ -30,6 +32,7 @@ type Handler interface {
 	HandleEvent(ctx context.Context, c *Client, evt *event.Event) error
 	HandleReq(ctx context.Context, c *Client, subID string, filters []*event.Filter) error
 	HandleClose(ctx context.Context, c *Client, subID string) error
+	HandleCount(ctx context.Context, c *Client, countID string, filters []*event.Filter) error
 }
 
 // Client represents a WebSocket client connection
@@ -149,6 +152,8 @@ func (c *Client) handleMessage(ctx context.Context, message []byte) error {
 		return c.handleReqMessage(ctx, raw)
 	case MessageTypeClose:
 		return c.handleCloseMessage(ctx, raw)
+	case MessageTypeCount:
+		return c.handleCountMessage(ctx, raw)
 	default:
 		return fmt.Errorf("unknown message type: %s", msgType)
 	}
@@ -224,6 +229,31 @@ func (c *Client) handleCloseMessage(ctx context.Context, raw []json.RawMessage) 
 
 	// Handle close
 	return c.handler.HandleClose(ctx, c, subID)
+}
+
+// handleCountMessage processes a COUNT message (NIP-45)
+func (c *Client) handleCountMessage(ctx context.Context, raw []json.RawMessage) error {
+	if len(raw) < 3 {
+		return fmt.Errorf("COUNT message must have at least 3 elements")
+	}
+
+	var countID string
+	if err := json.Unmarshal(raw[1], &countID); err != nil {
+		return fmt.Errorf("invalid count ID: %w", err)
+	}
+
+	// Parse filters
+	var filters []*event.Filter
+	for i := 2; i < len(raw); i++ {
+		var filter event.Filter
+		if err := json.Unmarshal(raw[i], &filter); err != nil {
+			return fmt.Errorf("invalid filter: %w", err)
+		}
+		filters = append(filters, &filter)
+	}
+
+	// Handle count
+	return c.handler.HandleCount(ctx, c, countID, filters)
 }
 
 // RemoveSubscription removes a subscription from the client
@@ -340,4 +370,43 @@ func (c *Client) HasSubscriptionToPubKey(pubKey string) bool {
 // RemoteAddr returns the remote address of the client
 func (c *Client) RemoteAddr() string {
 	return c.conn.RemoteAddr().String()
+}
+
+// SendCount sends a COUNT response to the client
+func (c *Client) SendCount(countID string, count int, approximate bool) error {
+	response := map[string]interface{}{
+		"count": count,
+	}
+	if approximate {
+		response["approximate"] = true
+	}
+
+	msg := []interface{}{MessageTypeCount, countID, response}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	select {
+	case c.sendCh <- data:
+		return nil
+	case <-c.closeCh:
+		return fmt.Errorf("client closed")
+	}
+}
+
+// SendClosed sends a CLOSED message to the client (NIP-45)
+func (c *Client) SendClosed(countID string, reason string) error {
+	msg := []interface{}{MessageTypeClosed, countID, reason}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	select {
+	case c.sendCh <- data:
+		return nil
+	case <-c.closeCh:
+		return fmt.Errorf("client closed")
+	}
 }

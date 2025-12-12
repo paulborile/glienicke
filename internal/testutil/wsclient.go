@@ -56,6 +56,12 @@ func (c *WSClient) SendClose(subID string) error {
 	return c.conn.WriteJSON(msg)
 }
 
+// SendCountMessage sends a COUNT message
+func (c *WSClient) SendCountMessage(countID string, filter *event.Filter) error {
+	msg := []interface{}{"COUNT", countID, filter}
+	return c.conn.WriteJSON(msg)
+}
+
 // ReadMessage reads and parses a single message
 func (c *WSClient) ReadMessage() ([]interface{}, error) {
 	var msg []json.RawMessage
