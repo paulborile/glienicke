@@ -167,6 +167,33 @@ func (s *Store) Close() error {
 	return nil
 }
 
+// CountEvents returns the count of events matching the filters
+func (s *Store) CountEvents(ctx context.Context, filters []*event.Filter) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	seen := make(map[string]bool)
+	count := 0
+
+	// Process each filter (OR'd together)
+	for _, filter := range filters {
+		for _, evt := range s.events {
+			// Skip if already counted or deleted
+			if seen[evt.ID] || s.deleted[evt.ID] {
+				continue
+			}
+
+			// Check if event matches filter
+			if evt.Matches(filter) {
+				count++
+				seen[evt.ID] = true
+			}
+		}
+	}
+
+	return count, nil
+}
+
 // Count returns the number of stored events (for testing)
 func (s *Store) Count() int {
 	s.mu.RLock()

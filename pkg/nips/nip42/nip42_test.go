@@ -107,6 +107,10 @@ func (m *mockStore) GetEvent(ctx context.Context, eventID string) (*event.Event,
 	return nil, nil
 }
 
+func (m *mockStore) CountEvents(ctx context.Context, filters []*event.Filter) (int, error) {
+	return 0, nil
+}
+
 func (m *mockStore) Close() error {
 	return nil
 }
