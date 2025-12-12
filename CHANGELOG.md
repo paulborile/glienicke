@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.11.0 - 2025-12-12
+
+### Implemented NIP-56: Reporting
+
+*   **Report Event Support (Kind 1984 Events):**
+    *   Relay now supports NIP-56 report events (kind 1984).
+    *   Report events allow users to flag objectionable content including profiles, notes, and blobs.
+    *   Supports all NIP-56 report types: nudity, malware, profanity, illegal, spam, impersonation, other.
+    *   Content field may contain additional information about the report.
+
+*   **Report Tag Validation:**
+    *   Reports must include a `p` tag referencing the reported user's pubkey.
+    *   Optional `e` tags can reference specific note/event IDs being reported.
+    *   Optional `x` tags can reference blob hashes with associated server information.
+    *   Report type must be specified as the 3rd element in reported tags.
+    *   Supports NIP-32 `l` and `L` tags for additional categorization.
+
+*   **Validation and Error Handling:**
+    *   Report events are validated for correct structure and required tags.
+    *   Invalid report types are rejected with descriptive error messages.
+    *   Missing required `p` tags are rejected.
+    *   Blob reports require corresponding event references when present.
+
+*   **Utility Functions:**
+    *   `ValidateReportEvent()` - Validates report events according to NIP-56 specification.
+    *   `IsReportEvent()` - Checks if an event is a report event.
+    *   `GetReportedPubKey()` - Extracts the pubkey being reported.
+    *   `GetReportedEventIDs()` - Extracts reported event IDs.
+    *   `GetReportedBlobs()` - Extracts blob report information with associated metadata.
+    *   `IsValidReportType()` and `GetReportTypes()` - Report type validation utilities.
+
+*   **Integration:**
+    *   NIP-56 support is now advertised in relay information documents.
+    *   Report events integrate seamlessly with existing event query and broadcast systems.
+    *   Comprehensive unit and integration tests ensure correct behavior.
+
 ## 0.10.0 - 2025-12-12
 
 ### Implemented NIP-65: Relay List Metadata

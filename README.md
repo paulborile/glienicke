@@ -123,6 +123,7 @@ glienicke/
 │   │   ├── nip09/          # NIP-09 (Event Deletion)
 │   │   ├── nip11/          # NIP-11 (Relay Information Document)
 │   │   ├── nip42/          # NIP-42 (Authentication)
+│   │   ├── nip56/          # NIP-56 (Reporting)
 │   │   └── nip65/          # NIP-65 (Relay List Metadata)
 │   └── relay/              # Relay orchestrator
 ├── internal/
@@ -162,12 +163,12 @@ glienicke/
 - **NIP-40: Event Expiration**: Supports `expiration` tag to automatically expire and filter events based on timestamp.
 - **NIP-42: Authentication**: Handles `kind:22242` AUTH events for client authentication with signature verification.
 - **NIP-50: Search Capability**: Supports full-text search across event content and tags with support for basic operators (AND, OR, NOT) and extensions like domain filtering.
+- **NIP-56: Reporting**: Handles `kind:1984` report events for flagging objectionable content including profiles, notes, and blobs with full validation support.
 - **NIP-65: Relay List Metadata**: Handles `kind:10002` relay list events for advertising preferred relays with read/write markers and proper validation.
 
 ## Planned NIPs
 
 For compliance with gossip :
-- NIP-56 Reporting
 - NIP-62 Vanish requests
 
 - NIP-70: Protected events
