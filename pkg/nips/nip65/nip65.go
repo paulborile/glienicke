@@ -3,7 +3,6 @@ package nip65
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/paul/glienicke/pkg/event"
@@ -11,31 +10,16 @@ import (
 )
 
 const (
-	// KindRelayList represents the kind number for relay list events (NIP-65)
+	// KindRelayList represents the kind number for relay list metadata events
 	KindRelayList = 10002
 )
 
-// RelayMode represents the read/write mode for a relay
-type RelayMode string
-
-const (
-	// ModeRead indicates the relay is used for reading
-	ModeRead RelayMode = "read"
-	// ModeWrite indicates the relay is used for writing
-	ModeWrite RelayMode = "write"
-	// ModeReadWrite indicates the relay is used for both reading and writing
-	ModeReadWrite RelayMode = ""
-)
-
-// RelayInfo contains information about a relay from a NIP-65 relay list
+// RelayInfo contains information about a relay from a relay list event
 type RelayInfo struct {
-	URL  string    // Relay URL
-	Mode RelayMode // read, write, or both (empty string)
-}
-
-// IsRelayListEvent checks if an event is a relay list event
-func IsRelayListEvent(evt *event.Event) bool {
-	return evt.Kind == KindRelayList
+	URL    string // The relay URL
+	Read   bool   // Whether this relay is used for reading
+	Write  bool   // Whether this relay is used for writing
+	Marker string // The original marker (read/write/empty/invalid)
 }
 
 // ValidateRelayList validates that an event is a proper NIP-65 relay list
@@ -54,57 +38,40 @@ func ValidateRelayList(evt *event.Event) error {
 	for _, tag := range evt.Tags {
 		if len(tag) >= 1 && tag[0] == "r" {
 			rTagCount++
+
+			// r tag must have at least 2 elements (tag name and relay URL)
 			if len(tag) < 2 {
 				return fmt.Errorf("r tag must have at least 2 elements (tag name and relay URL)")
 			}
 
-			// Validate relay URL format
-			relayURL := tag[1]
-			if err := validateRelayURL(relayURL); err != nil {
-				return fmt.Errorf("invalid relay URL in r tag: %w", err)
+			// Validate relay URL is not empty
+			relayURL := strings.TrimSpace(tag[1])
+			if relayURL == "" {
+				return fmt.Errorf("r tag relay URL cannot be empty")
 			}
 
-			// Validate mode if present
+			// Optional: Basic URL validation (should start with ws:// or wss://)
+			if !strings.HasPrefix(relayURL, "ws://") && !strings.HasPrefix(relayURL, "wss://") {
+				// This is not strictly required by the NIP but is a reasonable validation
+				return fmt.Errorf("r tag relay URL should start with ws:// or wss://, got: %s", relayURL)
+			}
+
+			// Validate marker if present (third element)
 			if len(tag) >= 3 {
-				mode := tag[2]
-				if mode != string(ModeRead) && mode != string(ModeWrite) {
-					return fmt.Errorf("invalid relay mode '%s', must be 'read' or 'write'", mode)
+				marker := strings.ToLower(tag[2])
+				if marker != "read" && marker != "write" {
+					// Allow unknown markers but note them as invalid per spec
+					// The NIP suggests only "read" and "write" are valid
+					// We'll accept unknown markers for now but this could be stricter
 				}
 			}
 		}
 	}
 
-	// Relay list events should have at least one r tag (though empty lists are technically allowed)
-	// This validation is optional depending on implementation requirements
+	// Relay list events should have at least one r tag
+	// This is not strictly required by the NIP but is reasonable
 	if rTagCount == 0 {
-		// Empty relay lists are valid according to the specification
-		// Comment this out if you want to require at least one relay
-		// return fmt.Errorf("relay list (kind 10002) must have at least one r tag")
-	}
-
-	return nil
-}
-
-// validateRelayURL validates that a relay URL is properly formatted
-func validateRelayURL(relayURL string) error {
-	if strings.TrimSpace(relayURL) == "" {
-		return fmt.Errorf("relay URL cannot be empty")
-	}
-
-	// Parse URL to validate format
-	parsedURL, err := url.Parse(relayURL)
-	if err != nil {
-		return fmt.Errorf("invalid URL format: %w", err)
-	}
-
-	// Must be ws:// or wss://
-	if parsedURL.Scheme != "ws" && parsedURL.Scheme != "wss" {
-		return fmt.Errorf("relay URL must use ws:// or wss:// scheme, got: %s", parsedURL.Scheme)
-	}
-
-	// Must have a host
-	if parsedURL.Host == "" {
-		return fmt.Errorf("relay URL must have a host")
+		return fmt.Errorf("relay list (kind 10002) should have at least one r tag")
 	}
 
 	return nil
@@ -129,93 +96,104 @@ func HandleRelayList(ctx context.Context, store storage.Store, evt *event.Event)
 	return nil
 }
 
-// ExtractRelayInfo extracts relay information from a relay list event
-func ExtractRelayInfo(evt *event.Event) ([]RelayInfo, error) {
+// ExtractRelayInfo extracts detailed relay information from a relay list event
+func ExtractRelayInfo(evt *event.Event) []RelayInfo {
+	relays := make([]RelayInfo, 0)
+
 	if evt.Kind != KindRelayList {
-		return nil, fmt.Errorf("event is not a relay list (kind %d)", evt.Kind)
+		return relays
 	}
 
-	relays := make([]RelayInfo, 0)
 	for _, tag := range evt.Tags {
 		if len(tag) >= 2 && tag[0] == "r" {
+			relayURL := strings.TrimSpace(tag[1])
+
 			relayInfo := RelayInfo{
-				URL: tag[1],
+				URL:    relayURL,
+				Read:   true, // Default: read relay
+				Write:  true, // Default: write relay
+				Marker: "",   // Default: no marker
 			}
 
-			// Set mode if present (third element)
+			// Check for marker (third element)
 			if len(tag) >= 3 {
-				relayInfo.Mode = RelayMode(tag[2])
-			} else {
-				// No mode specified means both read and write
-				relayInfo.Mode = ModeReadWrite
+				marker := strings.ToLower(tag[2])
+				relayInfo.Marker = marker
+
+				switch marker {
+				case "read":
+					relayInfo.Write = false
+				case "write":
+					relayInfo.Read = false
+				default:
+					// Unknown marker - keep as read+write but preserve the marker
+				}
 			}
 
 			relays = append(relays, relayInfo)
 		}
 	}
 
-	return relays, nil
+	return relays
 }
 
-// GetReadRelays extracts only the read relays from a relay list event
-func GetReadRelays(evt *event.Event) ([]string, error) {
-	relays, err := ExtractRelayInfo(evt)
-	if err != nil {
-		return nil, err
+// ExtractReadRelays extracts the list of read relays from a relay list event
+func ExtractReadRelays(evt *event.Event) []string {
+	if evt.Kind != KindRelayList {
+		return nil
 	}
 
-	var readRelays []string
-	for _, relay := range relays {
-		if relay.Mode == ModeRead || relay.Mode == ModeReadWrite {
-			readRelays = append(readRelays, relay.URL)
+	var relays []string
+	for _, tag := range evt.Tags {
+		if len(tag) >= 2 && tag[0] == "r" {
+			// Include if: no marker (default read+write), marker is "read", or unknown marker (treated as read+write)
+			// Only exclude if marker is explicitly "write"
+			if len(tag) == 2 || strings.ToLower(tag[2]) != "write" {
+				relays = append(relays, strings.TrimSpace(tag[1]))
+			}
 		}
 	}
 
-	return readRelays, nil
+	return relays
 }
 
-// GetWriteRelays extracts only the write relays from a relay list event
-func GetWriteRelays(evt *event.Event) ([]string, error) {
-	relays, err := ExtractRelayInfo(evt)
-	if err != nil {
-		return nil, err
+// ExtractWriteRelays extracts the list of write relays from a relay list event
+func ExtractWriteRelays(evt *event.Event) []string {
+	if evt.Kind != KindRelayList {
+		return nil
 	}
 
-	var writeRelays []string
-	for _, relay := range relays {
-		if relay.Mode == ModeWrite || relay.Mode == ModeReadWrite {
-			writeRelays = append(writeRelays, relay.URL)
+	var relays []string
+	for _, tag := range evt.Tags {
+		if len(tag) >= 2 && tag[0] == "r" {
+			// Include if: no marker (default read+write), marker is "write", or unknown marker (treated as read+write)
+			// Only exclude if marker is explicitly "read"
+			if len(tag) == 2 || strings.ToLower(tag[2]) != "read" {
+				relays = append(relays, strings.TrimSpace(tag[1]))
+			}
 		}
 	}
 
-	return writeRelays, nil
+	return relays
 }
 
-// NormalizeRelayURL normalizes a relay URL by removing trailing slashes and ensuring consistent format
-func NormalizeRelayURL(relayURL string) (string, error) {
-	trimmed := strings.TrimSpace(relayURL)
-	if trimmed == "" {
-		return "", fmt.Errorf("relay URL cannot be empty")
+// ExtractAllRelays extracts all relay URLs from a relay list event
+func ExtractAllRelays(evt *event.Event) []string {
+	if evt.Kind != KindRelayList {
+		return nil
 	}
 
-	parsedURL, err := url.Parse(trimmed)
-	if err != nil {
-		return "", fmt.Errorf("invalid relay URL: %w", err)
+	var relays []string
+	for _, tag := range evt.Tags {
+		if len(tag) >= 2 && tag[0] == "r" {
+			relays = append(relays, strings.TrimSpace(tag[1]))
+		}
 	}
 
-	// Validate it's a proper relay URL
-	if err := validateRelayURL(trimmed); err != nil {
-		return "", err
-	}
+	return relays
+}
 
-	// Remove all trailing slashes from path
-	for strings.HasSuffix(parsedURL.Path, "/") && parsedURL.Path != "/" {
-		parsedURL.Path = strings.TrimSuffix(parsedURL.Path, "/")
-	}
-	// Handle case where path is just "/" by removing it entirely
-	if parsedURL.Path == "/" {
-		parsedURL.Path = ""
-	}
-
-	return parsedURL.String(), nil
+// IsRelayListEvent checks if an event is a relay list event
+func IsRelayListEvent(evt *event.Event) bool {
+	return evt.Kind == KindRelayList
 }

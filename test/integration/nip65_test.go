@@ -1,232 +1,321 @@
 package integration
 
 import (
-	"context"
 	"testing"
+	"time"
 
-	"github.com/paul/glienicke/internal/store/memory"
 	"github.com/paul/glienicke/internal/testutil"
 	"github.com/paul/glienicke/pkg/event"
-	"github.com/paul/glienicke/pkg/nips/nip65"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func TestNIP65Integration(t *testing.T) {
-	ctx := context.Background()
+const (
+	KindRelayList = 10002
+)
 
-	// Create a test store
-	store := createTestStore(t)
-	defer store.Close()
+func TestNIP65_RelayListMetadata(t *testing.T) {
+	url, _, cleanup := setupRelay(t)
+	defer cleanup()
 
-	// Generate test keypair
-	kp := testutil.MustGenerateKeyPair()
+	client, err := testutil.NewWSClient(url)
+	assert.NoError(t, err)
+	defer client.Close()
 
-	t.Run("Complete relay list workflow", func(t *testing.T) {
-		// Create a valid NIP-65 relay list event
-		content := ""
-		tags := [][]string{
-			{"r", "wss://read-only.example.com", "read"},
-			{"r", "wss://write-only.example.com", "write"},
-			{"r", "wss://read-write.example.com"},
-			{"r", "wss://another-read.example.com", "read"},
-		}
+	// Create test user
+	user1, kp1 := testutil.MustNewTestEvent(KindTextNote, "User1 test note", nil)
 
-		evt, err := testutil.NewTestEventWithKey(kp, nip65.KindRelayList, content, tags)
-		require.NoError(t, err)
+	// Send initial event to establish user
+	err = client.SendEvent(user1)
+	assert.NoError(t, err)
 
-		// Validate it's a relay list event
-		assert.True(t, nip65.IsRelayListEvent(evt))
+	// Wait for event to be processed
+	time.Sleep(50 * time.Millisecond)
 
-		// Validate the event structure
-		err = nip65.ValidateRelayList(evt)
-		assert.NoError(t, err)
+	// Create a relay list event for user1
+	tags := [][]string{
+		{"r", "wss://alicerelay.example.com"},                // Default (read+write)
+		{"r", "wss://brando-relay.com"},                      // Default (read+write)
+		{"r", "wss://expensive-relay.example2.com", "write"}, // Write only
+		{"r", "wss://nostr-relay.example.com", "read"},       // Read only
+		{"r", "wss://invalid-relay", "invalid"},              // Invalid marker (should still be accepted)
+	}
 
-		// Store the event
-		err = store.SaveEvent(ctx, evt)
-		assert.NoError(t, err)
+	relayListEvent, _ := testutil.NewTestEventWithKey(kp1, KindRelayList, "", tags)
+	// Set a realistic timestamp
+	relayListEvent.CreatedAt = time.Now().Unix()
+	// Re-sign the event with the new timestamp
+	kp1.SignEvent(relayListEvent)
 
-		// Extract relay information
-		relays, err := nip65.ExtractRelayInfo(evt)
-		assert.NoError(t, err)
-		assert.Len(t, relays, 4)
+	// Send the relay list event
+	err = client.SendEvent(relayListEvent)
+	assert.NoError(t, err)
 
-		// Test read relay extraction
-		readRelays, err := nip65.GetReadRelays(evt)
-		assert.NoError(t, err)
-		assert.Contains(t, readRelays, "wss://read-only.example.com")
-		assert.Contains(t, readRelays, "wss://read-write.example.com")
-		assert.Contains(t, readRelays, "wss://another-read.example.com")
-		assert.NotContains(t, readRelays, "wss://write-only.example.com")
+	// Expect OK response
+	accepted, msg, err := client.ExpectOK(relayListEvent.ID, 2*time.Second)
+	assert.NoError(t, err)
+	assert.True(t, accepted, "Relay list event should be accepted")
+	assert.Empty(t, msg, "Message should be empty")
 
-		// Test write relay extraction
-		writeRelays, err := nip65.GetWriteRelays(evt)
-		assert.NoError(t, err)
-		assert.Contains(t, writeRelays, "wss://write-only.example.com")
-		assert.Contains(t, writeRelays, "wss://read-write.example.com")
-		assert.NotContains(t, writeRelays, "wss://read-only.example.com")
-		assert.NotContains(t, writeRelays, "wss://another-read.example.com")
-	})
+	// Give the relay a moment to process the relay list
+	time.Sleep(50 * time.Millisecond)
 
-	t.Run("Query stored relay list events", func(t *testing.T) {
-		// Query for the author's relay list
-		limit := 1
-		filter := &event.Filter{
-			Authors: []string{kp.PubKeyHex},
-			Kinds:   []int{nip65.KindRelayList},
-			Limit:   &limit,
-		}
+	// Test 1: Query for user1's relay list
+	filter := &event.Filter{
+		Authors: []string{user1.PubKey},
+		Kinds:   []int{KindRelayList},
+		Limit:   func() *int { l := 1; return &l }(),
+	}
+	err = client.SendReq("relay-list-sub", filter)
+	assert.NoError(t, err)
 
-		events, err := store.QueryEvents(ctx, []*event.Filter{filter})
-		assert.NoError(t, err)
-		assert.Len(t, events, 1)
+	// Should receive the relay list event
+	events, err := client.CollectEvents("relay-list-sub", 2*time.Second)
+	assert.NoError(t, err)
+	assert.Len(t, events, 1, "Should receive exactly one relay list event")
 
-		// Verify it's our relay list event
-		storedEvt := events[0]
-		assert.Equal(t, kp.PubKeyHex, storedEvt.PubKey)
-		assert.Equal(t, nip65.KindRelayList, storedEvt.Kind)
+	receivedRelayListEvent := events[0]
+	assert.Equal(t, KindRelayList, receivedRelayListEvent.Kind)
+	assert.Equal(t, "", receivedRelayListEvent.Content, "Relay list content should be empty")
+	assert.Equal(t, user1.PubKey, receivedRelayListEvent.PubKey)
 
-		// Verify we can extract relay info from stored event
-		relays, err := nip65.ExtractRelayInfo(storedEvt)
-		assert.NoError(t, err)
-		assert.Len(t, relays, 4)
-	})
+	// Verify the relay list contains the expected r tags
+	assert.Len(t, receivedRelayListEvent.Tags, 5, "Should have 5 r tags")
 
-	t.Run("Replaceable event behavior", func(t *testing.T) {
-		// Create a new relay list event with different relays
-		newTags := [][]string{
-			{"r", "wss://new-read.example.com", "read"},
-			{"r", "wss://new-write.example.com", "write"},
-		}
+	// Check first r tag (default - read+write)
+	assert.Equal(t, "r", receivedRelayListEvent.Tags[0][0])
+	assert.Equal(t, "wss://alicerelay.example.com", receivedRelayListEvent.Tags[0][1])
+	assert.Len(t, receivedRelayListEvent.Tags[0], 2, "Default tag should have only 2 elements")
 
-		newEvt, err := testutil.NewTestEventWithKey(kp, nip65.KindRelayList, "", newTags)
-		require.NoError(t, err)
+	// Check second r tag (default - read+write)
+	assert.Equal(t, "r", receivedRelayListEvent.Tags[1][0])
+	assert.Equal(t, "wss://brando-relay.com", receivedRelayListEvent.Tags[1][1])
+	assert.Len(t, receivedRelayListEvent.Tags[1], 2, "Default tag should have only 2 elements")
 
-		// Store the new event
-		err = store.SaveEvent(ctx, newEvt)
-		assert.NoError(t, err)
+	// Check third r tag (write only)
+	assert.Equal(t, "r", receivedRelayListEvent.Tags[2][0])
+	assert.Equal(t, "wss://expensive-relay.example2.com", receivedRelayListEvent.Tags[2][1])
+	assert.Equal(t, "write", receivedRelayListEvent.Tags[2][2])
 
-		// Query again - should get the latest event for this (author, kind) pair
-		limit := 10
-		filter := &event.Filter{
-			Authors: []string{kp.PubKeyHex},
-			Kinds:   []int{nip65.KindRelayList},
-			Limit:   &limit, // Get all to see replaceable behavior
-		}
+	// Check fourth r tag (read only)
+	assert.Equal(t, "r", receivedRelayListEvent.Tags[3][0])
+	assert.Equal(t, "wss://nostr-relay.example.com", receivedRelayListEvent.Tags[3][1])
+	assert.Equal(t, "read", receivedRelayListEvent.Tags[3][2])
 
-		events, err := store.QueryEvents(ctx, []*event.Filter{filter})
-		assert.NoError(t, err)
+	// Check fifth r tag (invalid marker - should still be stored)
+	assert.Equal(t, "r", receivedRelayListEvent.Tags[4][0])
+	assert.Equal(t, "wss://invalid-relay", receivedRelayListEvent.Tags[4][1])
+	assert.Equal(t, "invalid", receivedRelayListEvent.Tags[4][2])
 
-		// The storage layer should handle replaceable events by keeping only the latest
-		// This depends on the storage implementation, but ideally we'd only have 1 event
-		foundLatest := false
-		for _, evt := range events {
-			if evt.CreatedAt == newEvt.CreatedAt && evt.ID == newEvt.ID {
-				foundLatest = true
-				break
-			}
-		}
-		assert.True(t, foundLatest, "Latest relay list event should be stored")
-	})
+	// Test 2: Create a new relay list that should replace the old one
+	newTags := [][]string{
+		{"r", "wss://new-relay1.example.com", "read"},  // Read only
+		{"r", "wss://new-relay2.example.com", "write"}, // Write only
+	}
 
-	t.Run("Invalid relay list rejection", func(t *testing.T) {
-		// Test various invalid relay list scenarios
-		invalidScenarios := []struct {
-			name    string
-			content string
-			tags    [][]string
-		}{
-			{
-				name:    "Non-empty content",
-				content: "invalid content",
-				tags:    [][]string{{"r", "wss://relay.example.com"}},
-			},
-			{
-				name:    "Invalid URL scheme",
-				content: "",
-				tags:    [][]string{{"r", "https://relay.example.com"}},
-			},
-			{
-				name:    "Invalid mode",
-				content: "",
-				tags:    [][]string{{"r", "wss://relay.example.com", "invalid"}},
-			},
-		}
+	// Wait a moment to ensure different CreatedAt timestamp
+	time.Sleep(10 * time.Millisecond)
 
-		for _, scenario := range invalidScenarios {
-			t.Run(scenario.name, func(t *testing.T) {
-				evt, err := testutil.NewTestEventWithKey(kp, nip65.KindRelayList, scenario.content, scenario.tags)
-				require.NoError(t, err)
+	newRelayListEvent, _ := testutil.NewTestEventWithKey(kp1, KindRelayList, "", newTags)
+	// Set a newer timestamp
+	newRelayListEvent.CreatedAt = relayListEvent.CreatedAt + 1
+	// Re-sign the event with the new timestamp
+	kp1.SignEvent(newRelayListEvent)
 
-				// Should fail validation
-				err = nip65.ValidateRelayList(evt)
-				assert.Error(t, err)
+	// Send the new relay list event
+	err = client.SendEvent(newRelayListEvent)
+	assert.NoError(t, err)
 
-				// Should still be storable if we skip validation (storage layer doesn't validate)
-				// But the relay logic should prevent invalid events
-			})
-		}
-	})
+	// Expect OK response
+	accepted, msg, err = client.ExpectOK(newRelayListEvent.ID, 2*time.Second)
+	assert.NoError(t, err)
+	assert.True(t, accepted, "New relay list event should be accepted")
+	assert.Empty(t, msg, "Message should be empty")
 
-	t.Run("URL normalization", func(t *testing.T) {
-		testURLs := []struct {
-			input    string
-			expected string
-			hasError bool
-		}{
-			{"wss://relay.example.com/", "wss://relay.example.com", false},
-			{"wss://relay.example.com///", "wss://relay.example.com", false},
-			{"wss://relay.example.com/path/", "wss://relay.example.com/path", false},
-			{" wss://relay.example.com ", "wss://relay.example.com", false},
-			{"not-a-url", "", true},
-		}
+	// Give the relay a moment to process
+	time.Sleep(50 * time.Millisecond)
 
-		for _, test := range testURLs {
-			normalized, err := nip65.NormalizeRelayURL(test.input)
-			if test.hasError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, test.expected, normalized)
-			}
-		}
-	})
+	// Query for user1's relay list again - should only get the newest one
+	err = client.SendReq("relay-list-sub-2", filter)
+	assert.NoError(t, err)
 
-	t.Run("Mixed tags handling", func(t *testing.T) {
-		// Test that non-r tags are properly ignored
-		tags := [][]string{
-			{"e", "event_id"},
-			{"p", "pubkey"},
-			{"t", "hashtag"},
-			{"r", "wss://relay1.example.com", "read"},
-			{"r", "wss://relay2.example.com"},
-			{"d", "identifier"},
-		}
+	events, err = client.CollectEvents("relay-list-sub-2", 2*time.Second)
+	assert.NoError(t, err)
+	assert.Len(t, events, 1, "Should receive exactly one relay list event (the newest)")
 
-		evt, err := testutil.NewTestEventWithKey(kp, nip65.KindRelayList, "", tags)
-		require.NoError(t, err)
-
-		// Should validate successfully
-		err = nip65.ValidateRelayList(evt)
-		assert.NoError(t, err)
-
-		// Should extract only r tags
-		relays, err := nip65.ExtractRelayInfo(evt)
-		assert.NoError(t, err)
-		assert.Len(t, relays, 2)
-
-		relayURLs := make([]string, len(relays))
-		for i, relay := range relays {
-			relayURLs[i] = relay.URL
-		}
-		assert.Contains(t, relayURLs, "wss://relay1.example.com")
-		assert.Contains(t, relayURLs, "wss://relay2.example.com")
-	})
+	newestRelayListEvent := events[0]
+	assert.Equal(t, newRelayListEvent.ID, newestRelayListEvent.ID, "Should receive the newest relay list event")
+	assert.Len(t, newestRelayListEvent.Tags, 2, "New relay list should have 2 r tags")
 }
 
-// Helper function to create a test store
-func createTestStore(t *testing.T) *memory.Store {
-	// Use the same test store creation pattern as other integration tests
-	store := memory.New()
-	return store
+func TestNIP65_RelayListValidation(t *testing.T) {
+	url, _, cleanup := setupRelay(t)
+	defer cleanup()
+
+	client, err := testutil.NewWSClient(url)
+	assert.NoError(t, err)
+	defer client.Close()
+
+	// Test invalid relay list events
+	testCases := []struct {
+		name         string
+		tags         [][]string
+		content      string
+		shouldAccept bool
+	}{
+		{
+			name:         "Valid relay list with empty content",
+			tags:         [][]string{{"r", "wss://relay.example.com"}},
+			content:      "",
+			shouldAccept: true,
+		},
+		{
+			name:         "Valid relay list with read marker",
+			tags:         [][]string{{"r", "wss://relay.example.com", "read"}},
+			content:      "",
+			shouldAccept: true,
+		},
+		{
+			name:         "Valid relay list with write marker",
+			tags:         [][]string{{"r", "wss://relay.example.com", "write"}},
+			content:      "",
+			shouldAccept: true,
+		},
+		{
+			name:         "Valid relay list with multiple r tags",
+			tags:         [][]string{{"r", "wss://relay1.example.com"}, {"r", "wss://relay2.example.com", "read"}},
+			content:      "",
+			shouldAccept: true,
+		},
+		{
+			name:         "Invalid relay list with non-empty content",
+			tags:         [][]string{{"r", "wss://relay.example.com"}},
+			content:      "some content",
+			shouldAccept: false,
+		},
+		{
+			name:         "Invalid relay list with no r tags",
+			tags:         [][]string{{"e", "some_event_id"}},
+			content:      "",
+			shouldAccept: false,
+		},
+		{
+			name:         "Invalid r tag missing relay URL",
+			tags:         [][]string{{"r"}},
+			content:      "",
+			shouldAccept: false,
+		},
+		{
+			name:         "Valid relay list with minimal r tag",
+			tags:         [][]string{{"r", "wss://minimal.example.com"}},
+			content:      "",
+			shouldAccept: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, kp := testutil.MustNewTestEvent(KindTextNote, "Test note", nil)
+
+			relayListEvent, _ := testutil.NewTestEventWithKey(kp, KindRelayList, tc.content, tc.tags)
+			relayListEvent.CreatedAt = time.Now().Unix()
+			kp.SignEvent(relayListEvent)
+
+			// Send the relay list event
+			err = client.SendEvent(relayListEvent)
+			assert.NoError(t, err)
+
+			// Expect OK response
+			accepted, msg, err := client.ExpectOK(relayListEvent.ID, 2*time.Second)
+			assert.NoError(t, err)
+
+			if tc.shouldAccept {
+				assert.True(t, accepted, "Event should be accepted: %s", tc.name)
+				assert.Empty(t, msg, "Message should be empty for accepted event: %s", tc.name)
+			} else {
+				assert.False(t, accepted, "Event should be rejected: %s", tc.name)
+				assert.NotEmpty(t, msg, "Message should explain rejection: %s", tc.name)
+			}
+		})
+	}
+}
+
+func TestNIP65_RelayListExtraction(t *testing.T) {
+	// This test verifies the extraction logic works correctly
+	// We'll create a relay list event and verify we can extract the relays correctly
+
+	tags := [][]string{
+		{"r", "wss://readwrite.example.com"},           // Default (read+write)
+		{"r", "wss://read-only.example.com", "read"},   // Read only
+		{"r", "wss://write-only.example.com", "write"}, // Write only
+		{"r", "wss://another.example.com"},             // Default (read+write)
+	}
+
+	_, kp := testutil.MustNewTestEvent(KindTextNote, "Test note", nil)
+	relayListEvent, _ := testutil.NewTestEventWithKey(kp, KindRelayList, "", tags)
+
+	// Test extracting read relays
+	readRelays := extractReadRelays(relayListEvent)
+	expectedReadRelays := []string{
+		"wss://readwrite.example.com",
+		"wss://read-only.example.com",
+		"wss://another.example.com",
+	}
+	assert.Equal(t, expectedReadRelays, readRelays)
+
+	// Test extracting write relays
+	writeRelays := extractWriteRelays(relayListEvent)
+	expectedWriteRelays := []string{
+		"wss://readwrite.example.com",
+		"wss://write-only.example.com",
+		"wss://another.example.com",
+	}
+	assert.Equal(t, expectedWriteRelays, writeRelays)
+
+	// Test extracting all relays
+	allRelays := extractAllRelays(relayListEvent)
+	expectedAllRelays := []string{
+		"wss://readwrite.example.com",
+		"wss://read-only.example.com",
+		"wss://write-only.example.com",
+		"wss://another.example.com",
+	}
+	assert.Equal(t, expectedAllRelays, allRelays)
+}
+
+// Helper functions for extracting relays from a relay list event
+// These would be part of the NIP-65 implementation
+func extractReadRelays(evt *event.Event) []string {
+	var relays []string
+	for _, tag := range evt.Tags {
+		if len(tag) >= 2 && tag[0] == "r" {
+			// If no marker or marker is "read", this is a read relay
+			if len(tag) == 2 || tag[2] == "read" {
+				relays = append(relays, tag[1])
+			}
+		}
+	}
+	return relays
+}
+
+func extractWriteRelays(evt *event.Event) []string {
+	var relays []string
+	for _, tag := range evt.Tags {
+		if len(tag) >= 2 && tag[0] == "r" {
+			// If no marker or marker is "write", this is a write relay
+			if len(tag) == 2 || tag[2] == "write" {
+				relays = append(relays, tag[1])
+			}
+		}
+	}
+	return relays
+}
+
+func extractAllRelays(evt *event.Event) []string {
+	var relays []string
+	for _, tag := range evt.Tags {
+		if len(tag) >= 2 && tag[0] == "r" {
+			relays = append(relays, tag[1])
+		}
+	}
+	return relays
 }

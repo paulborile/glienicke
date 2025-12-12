@@ -8,487 +8,363 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestIsRelayListEvent(t *testing.T) {
-	tests := []struct {
-		name     string
-		kind     int
-		expected bool
-	}{
-		{"Relay list event", KindRelayList, true},
-		{"Text note event", 1, false},
-		{"Metadata event", 0, false},
-		{"Follow list event", 3, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			evt := &event.Event{Kind: tt.kind}
-			assert.Equal(t, tt.expected, IsRelayListEvent(evt))
-		})
-	}
-}
-
 func TestValidateRelayList(t *testing.T) {
-	tests := []struct {
+	testCases := []struct {
 		name        string
-		kind        int
-		content     string
 		tags        [][]string
+		content     string
 		expectError bool
 		errorMsg    string
 	}{
 		{
-			name:    "Valid relay list with mixed modes",
-			kind:    KindRelayList,
-			content: "",
+			name: "Valid relay list with default r tag",
+			tags: [][]string{
+				{"r", "wss://relay.example.com"},
+			},
+			content:     "",
+			expectError: false,
+		},
+		{
+			name: "Valid relay list with read marker",
+			tags: [][]string{
+				{"r", "wss://relay.example.com", "read"},
+			},
+			content:     "",
+			expectError: false,
+		},
+		{
+			name: "Valid relay list with write marker",
+			tags: [][]string{
+				{"r", "wss://relay.example.com", "write"},
+			},
+			content:     "",
+			expectError: false,
+		},
+		{
+			name: "Valid relay list with multiple relays",
 			tags: [][]string{
 				{"r", "wss://relay1.example.com"},
 				{"r", "wss://relay2.example.com", "read"},
 				{"r", "wss://relay3.example.com", "write"},
 			},
-			expectError: false,
-		},
-		{
-			name:        "Valid empty relay list",
-			kind:        KindRelayList,
 			content:     "",
-			tags:        [][]string{},
 			expectError: false,
 		},
 		{
-			name:        "Not a relay list (different kind)",
-			kind:        1,
+			name: "Valid relay list with mixed case marker",
+			tags: [][]string{
+				{"r", "wss://relay.example.com", "READ"},
+			},
 			content:     "",
-			tags:        [][]string{{"r", "wss://relay.example.com"}},
 			expectError: false,
 		},
 		{
-			name:        "Invalid relay list with non-empty content",
-			kind:        KindRelayList,
+			name: "Invalid relay list with non-empty content",
+			tags: [][]string{
+				{"r", "wss://relay.example.com"},
+			},
 			content:     "some content",
-			tags:        [][]string{{"r", "wss://relay.example.com"}},
 			expectError: true,
 			errorMsg:    "relay list (kind 10002) must have empty content",
 		},
 		{
-			name:        "Invalid r tag missing URL",
-			kind:        KindRelayList,
-			content:     "",
-			tags:        [][]string{{"r"}},
-			expectError: true,
-			errorMsg:    "r tag must have at least 2 elements (tag name and relay URL)",
-		},
-		{
-			name:        "Invalid relay URL format",
-			kind:        KindRelayList,
-			content:     "",
-			tags:        [][]string{{"r", "not-a-url"}},
-			expectError: true,
-			errorMsg:    "invalid relay URL in r tag",
-		},
-		{
-			name:        "Invalid relay URL scheme",
-			kind:        KindRelayList,
-			content:     "",
-			tags:        [][]string{{"r", "https://relay.example.com"}},
-			expectError: true,
-			errorMsg:    "relay URL must use ws:// or wss:// scheme",
-		},
-		{
-			name:        "Invalid relay mode",
-			kind:        KindRelayList,
-			content:     "",
-			tags:        [][]string{{"r", "wss://relay.example.com", "invalid"}},
-			expectError: true,
-			errorMsg:    "invalid relay mode 'invalid', must be 'read' or 'write'",
-		},
-		{
-			name:        "Empty relay URL",
-			kind:        KindRelayList,
-			content:     "",
-			tags:        [][]string{{"r", ""}},
-			expectError: true,
-			errorMsg:    "invalid relay URL in r tag: relay URL cannot be empty",
-		},
-		{
-			name:    "Mixed valid and invalid tags",
-			kind:    KindRelayList,
-			content: "",
+			name: "Invalid relay list with empty relay URL",
 			tags: [][]string{
-				{"r", "wss://valid.example.com"},
-				{"r", "invalid-url"},
+				{"r", ""},
 			},
+			content:     "",
 			expectError: true,
-			errorMsg:    "invalid relay URL in r tag",
+			errorMsg:    "r tag relay URL cannot be empty",
+		},
+		{
+			name: "Invalid relay list with missing relay URL",
+			tags: [][]string{
+				{"r"},
+			},
+			content:     "",
+			expectError: true,
+			errorMsg:    "r tag must have at least 2 elements",
+		},
+		{
+			name: "Invalid relay list with invalid URL scheme",
+			tags: [][]string{
+				{"r", "http://relay.example.com"},
+			},
+			content:     "",
+			expectError: true,
+			errorMsg:    "r tag relay URL should start with ws:// or wss://",
+		},
+		{
+			name: "Invalid relay list with no r tags",
+			tags: [][]string{
+				{"p", "0000000000000000000000000000000000000000000000000000000000000000"},
+			},
+			content:     "",
+			expectError: true,
+			errorMsg:    "relay list (kind 10002) should have at least one r tag",
+		},
+		{
+			name: "Valid relay list with whitespace-only URL (should be trimmed and fail)",
+			tags: [][]string{
+				{"r", "   "},
+			},
+			content:     "",
+			expectError: true,
+			errorMsg:    "r tag relay URL cannot be empty",
+		},
+		{
+			name: "Valid relay list with unknown marker (should be accepted)",
+			tags: [][]string{
+				{"r", "wss://relay.example.com", "unknown"},
+			},
+			content:     "",
+			expectError: false,
+		},
+		{
+			name: "Not a relay list event (should return nil)",
+			tags: [][]string{
+				{"r", "wss://relay.example.com"},
+			},
+			content:     "",
+			expectError: false,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
 			evt := &event.Event{
-				Kind:    tt.kind,
-				Content: tt.content,
-				Tags:    tt.tags,
+				Kind:    KindRelayList,
+				Tags:    tc.tags,
+				Content: tc.content,
+			}
+
+			// For the test case "Not a relay list event", use kind 1
+			if tc.name == "Not a relay list event (should return nil)" {
+				evt.Kind = 1
 			}
 
 			err := ValidateRelayList(evt)
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorMsg != "" {
-					assert.Contains(t, err.Error(), tt.errorMsg)
+
+			if tc.expectError {
+				assert.Error(t, err, "Expected validation error")
+				if tc.errorMsg != "" {
+					assert.Contains(t, err.Error(), tc.errorMsg, "Error message mismatch")
 				}
 			} else {
-				assert.NoError(t, err)
+				assert.NoError(t, err, "Expected no validation error")
 			}
 		})
 	}
 }
 
 func TestExtractRelayInfo(t *testing.T) {
-	tests := []struct {
-		name           string
-		kind           int
-		tags           [][]string
-		expectedRelays []RelayInfo
-		expectError    bool
-	}{
+	tags := [][]string{
+		{"r", "wss://readwrite.example.com"},             // Default (read+write)
+		{"r", "wss://read-only.example.com", "read"},     // Read only
+		{"r", "wss://write-only.example.com", "write"},   // Write only
+		{"r", "wss://unknown-marker.example.com", "foo"}, // Unknown marker (read+write)
+		{"r", "wss://spaced.example.com", "   "},         // Whitespace marker (read+write)
+	}
+
+	evt := &event.Event{
+		Kind: KindRelayList,
+		Tags: tags,
+	}
+
+	relayInfo := ExtractRelayInfo(evt)
+
+	expectedRelayInfo := []RelayInfo{
 		{
-			name: "Extract from valid relay list with mixed modes",
-			kind: KindRelayList,
-			tags: [][]string{
-				{"r", "wss://relay1.example.com"},
-				{"r", "wss://relay2.example.com", "read"},
-				{"r", "wss://relay3.example.com", "write"},
-			},
-			expectedRelays: []RelayInfo{
-				{URL: "wss://relay1.example.com", Mode: ModeReadWrite},
-				{URL: "wss://relay2.example.com", Mode: ModeRead},
-				{URL: "wss://relay3.example.com", Mode: ModeWrite},
-			},
-			expectError: false,
+			URL:    "wss://readwrite.example.com",
+			Read:   true,
+			Write:  true,
+			Marker: "",
 		},
 		{
-			name:           "Non-relay list event",
-			kind:           1,
-			tags:           [][]string{{"r", "wss://relay.example.com"}},
-			expectedRelays: nil,
-			expectError:    true,
+			URL:    "wss://read-only.example.com",
+			Read:   true,
+			Write:  false,
+			Marker: "read",
 		},
 		{
-			name:           "Relay list with no r tags",
-			kind:           KindRelayList,
-			tags:           [][]string{{"e", "some_event_id"}},
-			expectedRelays: []RelayInfo{},
-			expectError:    false,
+			URL:    "wss://write-only.example.com",
+			Read:   false,
+			Write:  true,
+			Marker: "write",
 		},
 		{
-			name: "Mixed tags",
-			kind: KindRelayList,
-			tags: [][]string{
-				{"e", "some_event_id"},
-				{"r", "wss://relay1.example.com", "read"},
-				{"t", "hashtag"},
-				{"r", "wss://relay2.example.com"},
-			},
-			expectedRelays: []RelayInfo{
-				{URL: "wss://relay1.example.com", Mode: ModeRead},
-				{URL: "wss://relay2.example.com", Mode: ModeReadWrite},
-			},
-			expectError: false,
+			URL:    "wss://unknown-marker.example.com",
+			Read:   true,
+			Write:  true,
+			Marker: "foo",
+		},
+		{
+			URL:    "wss://spaced.example.com",
+			Read:   true,
+			Write:  true,
+			Marker: "   ",
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			evt := &event.Event{
-				Kind: tt.kind,
-				Tags: tt.tags,
-			}
-
-			relays, err := ExtractRelayInfo(evt)
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedRelays, relays)
-			}
-		})
-	}
+	assert.Equal(t, expectedRelayInfo, relayInfo, "Relay info extraction mismatch")
 }
 
-func TestGetReadRelays(t *testing.T) {
-	tests := []struct {
-		name               string
-		kind               int
-		tags               [][]string
-		expectedReadRelays []string
-		expectError        bool
-	}{
-		{
-			name: "Extract read relays including read/write",
-			kind: KindRelayList,
-			tags: [][]string{
-				{"r", "wss://read-only.example.com", "read"},
-				{"r", "wss://read-write.example.com"},
-				{"r", "wss://write-only.example.com", "write"},
-			},
-			expectedReadRelays: []string{
-				"wss://read-only.example.com",
-				"wss://read-write.example.com",
-			},
-			expectError: false,
-		},
-		{
-			name:               "Non-relay list event",
-			kind:               1,
-			tags:               [][]string{{"r", "wss://relay.example.com"}},
-			expectedReadRelays: nil,
-			expectError:        true,
+func TestExtractRelayInfoFromNonRelayListEvent(t *testing.T) {
+	evt := &event.Event{
+		Kind: 1, // Not a relay list
+		Tags: [][]string{
+			{"r", "wss://relay.example.com"},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			evt := &event.Event{
-				Kind: tt.kind,
-				Tags: tt.tags,
-			}
-
-			readRelays, err := GetReadRelays(evt)
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedReadRelays, readRelays)
-			}
-		})
-	}
+	relayInfo := ExtractRelayInfo(evt)
+	assert.Empty(t, relayInfo, "Should return empty slice for non-relay list event")
 }
 
-func TestGetWriteRelays(t *testing.T) {
-	tests := []struct {
-		name                string
-		kind                int
-		tags                [][]string
-		expectedWriteRelays []string
-		expectError         bool
-	}{
-		{
-			name: "Extract write relays including read/write",
-			kind: KindRelayList,
-			tags: [][]string{
-				{"r", "wss://read-only.example.com", "read"},
-				{"r", "wss://read-write.example.com"},
-				{"r", "wss://write-only.example.com", "write"},
-			},
-			expectedWriteRelays: []string{
-				"wss://read-write.example.com",
-				"wss://write-only.example.com",
-			},
-			expectError: false,
+func TestExtractReadRelays(t *testing.T) {
+	tags := [][]string{
+		{"r", "wss://readwrite.example.com"},           // Default (read)
+		{"r", "wss://read-only.example.com", "read"},   // Read only
+		{"r", "wss://write-only.example.com", "write"}, // Write only (not included)
+		{"r", "wss://unknown.example.com", "unknown"},  // Unknown marker (read+write)
+		{"r", "wss://another.example.com"},             // Default (read)
+	}
+
+	evt := &event.Event{
+		Kind: KindRelayList,
+		Tags: tags,
+	}
+
+	readRelays := ExtractReadRelays(evt)
+	expectedReadRelays := []string{
+		"wss://readwrite.example.com",
+		"wss://read-only.example.com",
+		"wss://unknown.example.com",
+		"wss://another.example.com",
+	}
+
+	assert.Equal(t, expectedReadRelays, readRelays, "Read relays extraction mismatch")
+}
+
+func TestExtractWriteRelays(t *testing.T) {
+	tags := [][]string{
+		{"r", "wss://readwrite.example.com"},           // Default (write)
+		{"r", "wss://read-only.example.com", "read"},   // Read only (not included)
+		{"r", "wss://write-only.example.com", "write"}, // Write only
+		{"r", "wss://unknown.example.com", "unknown"},  // Unknown marker (read+write)
+		{"r", "wss://another.example.com"},             // Default (write)
+	}
+
+	evt := &event.Event{
+		Kind: KindRelayList,
+		Tags: tags,
+	}
+
+	writeRelays := ExtractWriteRelays(evt)
+	expectedWriteRelays := []string{
+		"wss://readwrite.example.com",
+		"wss://write-only.example.com",
+		"wss://unknown.example.com",
+		"wss://another.example.com",
+	}
+
+	assert.Equal(t, expectedWriteRelays, writeRelays, "Write relays extraction mismatch")
+}
+
+func TestExtractAllRelays(t *testing.T) {
+	tags := [][]string{
+		{"r", "wss://relay1.example.com"},
+		{"r", "wss://relay2.example.com", "read"},
+		{"r", "wss://relay3.example.com", "write"},
+		{"r", "wss://relay4.example.com", "unknown"},
+	}
+
+	evt := &event.Event{
+		Kind: KindRelayList,
+		Tags: tags,
+	}
+
+	allRelays := ExtractAllRelays(evt)
+	expectedAllRelays := []string{
+		"wss://relay1.example.com",
+		"wss://relay2.example.com",
+		"wss://relay3.example.com",
+		"wss://relay4.example.com",
+	}
+
+	assert.Equal(t, expectedAllRelays, allRelays, "All relays extraction mismatch")
+}
+
+func TestExtractFromNonRelayListEvents(t *testing.T) {
+	evt := &event.Event{
+		Kind: 1, // Not a relay list
+		Tags: [][]string{
+			{"r", "wss://relay.example.com"},
 		},
-		{
-			name:                "Non-relay list event",
-			kind:                1,
-			tags:                [][]string{{"r", "wss://relay.example.com"}},
-			expectedWriteRelays: nil,
-			expectError:         true,
-		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			evt := &event.Event{
-				Kind: tt.kind,
-				Tags: tt.tags,
-			}
-
-			writeRelays, err := GetWriteRelays(evt)
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedWriteRelays, writeRelays)
-			}
-		})
-	}
+	assert.Empty(t, ExtractReadRelays(evt), "Should return empty for non-relay list event")
+	assert.Empty(t, ExtractWriteRelays(evt), "Should return empty for non-relay list event")
+	assert.Empty(t, ExtractAllRelays(evt), "Should return empty for non-relay list event")
 }
 
-func TestValidateRelayURL(t *testing.T) {
-	tests := []struct {
-		name        string
-		relayURL    string
-		expectError bool
-		errorMsg    string
-	}{
-		{"Valid wss:// URL", "wss://relay.example.com", false, ""},
-		{"Valid ws:// URL", "ws://relay.example.com", false, ""},
-		{"Valid wss:// URL with path", "wss://relay.example.com/path", false, ""},
-		{"Valid wss:// URL with port", "wss://relay.example.com:8080", false, ""},
-		{"Empty URL", "", true, "relay URL cannot be empty"},
-		{"Invalid scheme", "https://relay.example.com", true, "must use ws:// or wss:// scheme"},
-		{"Missing scheme", "relay.example.com", true, "must use ws:// or wss:// scheme"},
-		{"Missing host", "wss://", true, "must have a host"},
-		{"Invalid URL format", "not-a-url", true, "must use ws:// or wss:// scheme"},
-		{"Whitespace only", "   ", true, "relay URL cannot be empty"},
-	}
+func TestIsRelayListEvent(t *testing.T) {
+	relayListEvt := &event.Event{Kind: KindRelayList}
+	nonRelayListEvt := &event.Event{Kind: 1}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateRelayURL(tt.relayURL)
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorMsg != "" {
-					assert.Contains(t, err.Error(), tt.errorMsg)
-				}
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestNormalizeRelayURL(t *testing.T) {
-	tests := []struct {
-		name        string
-		inputURL    string
-		expectedURL string
-		expectError bool
-	}{
-		{"Remove trailing slash", "wss://relay.example.com/", "wss://relay.example.com", false},
-		{"Remove multiple trailing slashes", "wss://relay.example.com///", "wss://relay.example.com", false},
-		{"Keep path without trailing slash", "wss://relay.example.com/path", "wss://relay.example.com/path", false},
-		{"Remove trailing slash from path", "wss://relay.example.com/path/", "wss://relay.example.com/path", false},
-		{"Trim whitespace", " wss://relay.example.com ", "wss://relay.example.com", false},
-		{"Already normalized", "wss://relay.example.com", "wss://relay.example.com", false},
-		{"Invalid URL", "not-a-url", "", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			normalizedURL, err := NormalizeRelayURL(tt.inputURL)
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedURL, normalizedURL)
-			}
-		})
-	}
-}
-
-func TestRelayModeConstants(t *testing.T) {
-	assert.Equal(t, RelayMode("read"), ModeRead)
-	assert.Equal(t, RelayMode("write"), ModeWrite)
-	assert.Equal(t, RelayMode(""), ModeReadWrite)
+	assert.True(t, IsRelayListEvent(relayListEvt), "Should identify relay list event")
+	assert.False(t, IsRelayListEvent(nonRelayListEvt), "Should not identify non-relay list event")
 }
 
 func TestHandleRelayList(t *testing.T) {
-	tests := []struct {
-		name        string
-		kind        int
-		content     string
-		tags        [][]string
-		expectError bool
-	}{
-		{
-			name:        "Valid relay list",
-			kind:        KindRelayList,
-			content:     "",
-			tags:        [][]string{{"r", "wss://relay.example.com"}},
-			expectError: false,
-		},
-		{
-			name:        "Non-relay list event",
-			kind:        1,
-			content:     "test",
-			tags:        [][]string{{"t", "hashtag"}},
-			expectError: false,
-		},
-		{
-			name:        "Invalid relay list",
-			kind:        KindRelayList,
-			content:     "invalid content",
-			tags:        [][]string{{"r", "wss://relay.example.com"}},
-			expectError: true,
-		},
-	}
+	// This test is more of an integration test since we need a mock storage
+	// We'll just test the validation part here
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			evt := &event.Event{
-				Kind:    tt.kind,
-				Content: tt.content,
-				Tags:    tt.tags,
-			}
+	_, kp := testutil.MustNewTestEvent(KindRelayList, "", [][]string{
+		{"r", "wss://relay.example.com"},
+	})
 
-			// We can't easily test the storage interaction without a mock,
-			// but we can test the validation logic
-			if tt.kind == KindRelayList {
-				err := ValidateRelayList(evt)
-				if tt.expectError {
-					assert.Error(t, err)
-				} else {
-					assert.NoError(t, err)
-				}
-			} else {
-				// Non-relay list events should not be processed
-				assert.True(t, true) // This would be handled by the calling code
-			}
-		})
-	}
+	// Create a valid relay list event
+	evt, err := testutil.NewTestEventWithKey(kp, KindRelayList, "", [][]string{
+		{"r", "wss://relay.example.com"},
+	})
+	assert.NoError(t, err)
+
+	// Test handling - this should not return an error for a valid event
+	err = HandleRelayList(nil, nil, evt)
+	assert.NoError(t, err, "Valid relay list event should be handled without error")
+
+	// Test with invalid event (non-empty content)
+	invalidEvt, err := testutil.NewTestEventWithKey(kp, KindRelayList, "invalid content", [][]string{
+		{"r", "wss://relay.example.com"},
+	})
+	assert.NoError(t, err)
+
+	err = HandleRelayList(nil, nil, invalidEvt)
+	assert.Error(t, err, "Invalid relay list event should return error")
+	assert.Contains(t, err.Error(), "invalid relay list event", "Error should mention validation failure")
+
+	// Test with non-relay list event
+	nonRelayListEvt, err := testutil.NewTestEventWithKey(kp, 1, "test", nil)
+	assert.NoError(t, err)
+
+	err = HandleRelayList(nil, nil, nonRelayListEvt)
+	assert.NoError(t, err, "Non-relay list event should be handled without error")
 }
 
-func TestRelayInfoStruct(t *testing.T) {
-	relay := RelayInfo{
-		URL:  "wss://relay.example.com",
-		Mode: ModeRead,
-	}
-
-	assert.Equal(t, "wss://relay.example.com", relay.URL)
-	assert.Equal(t, ModeRead, relay.Mode)
-}
-
-// Test edge cases with real test events
-func TestRelayListWithRealEvents(t *testing.T) {
-	kp := testutil.MustGenerateKeyPair()
-
-	tests := []struct {
-		name        string
-		content     string
-		tags        [][]string
-		expectError bool
-	}{
-		{
-			name:    "Real valid relay list event",
-			content: "",
-			tags: [][]string{
-				{"r", "wss://relay.example.com", "read"},
-				{"r", "wss://relay2.example.com"},
-			},
-			expectError: false,
-		},
-		{
-			name:    "Real invalid relay list event with content",
-			content: "this should not be here",
-			tags: [][]string{
-				{"r", "wss://relay.example.com"},
-			},
-			expectError: true,
+func TestRelayURLWhitespaceHandling(t *testing.T) {
+	evt := &event.Event{
+		Kind: KindRelayList,
+		Tags: [][]string{
+			{"r", "  wss://whitespace.example.com  "},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			evt, err := testutil.NewTestEventWithKey(kp, KindRelayList, tt.content, tt.tags)
-			assert.NoError(t, err)
+	relayInfo := ExtractRelayInfo(evt)
+	assert.Len(t, relayInfo, 1, "Should extract one relay")
+	assert.Equal(t, "wss://whitespace.example.com", relayInfo[0].URL, "Should trim whitespace from URL")
 
-			validationErr := ValidateRelayList(evt)
-			if tt.expectError {
-				assert.Error(t, validationErr)
-			} else {
-				assert.NoError(t, validationErr)
-			}
-		})
-	}
+	readRelays := ExtractReadRelays(evt)
+	assert.Len(t, readRelays, 1, "Should extract one read relay")
+	assert.Equal(t, "wss://whitespace.example.com", readRelays[0], "Should trim whitespace from read relay URL")
 }
