@@ -69,5 +69,4 @@ basic empty stubs for the new code so that intengration/unit tests can be writte
 3. Implement the features : if nostr specific features are needed check if available in github.com/nbd-wtf/go-nostr, otherwise implement. Keep dependency from external code at minimum, implement unit tests for new features
 4. Run unit and integration test / debug / fix / until the both test work without failures
 5. Bump the version, update README and CHANGELOG
-6. Commit and create pull request
 

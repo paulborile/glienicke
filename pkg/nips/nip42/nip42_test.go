@@ -99,6 +99,10 @@ func (m *mockStore) DeleteEvent(ctx context.Context, eventID string, deleterPubK
 	return nil
 }
 
+func (m *mockStore) DeleteAllEventsByPubKey(ctx context.Context, pubkey string) error {
+	return nil
+}
+
 func (m *mockStore) GetEvent(ctx context.Context, eventID string) (*event.Event, error) {
 	return nil, nil
 }

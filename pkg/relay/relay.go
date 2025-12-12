@@ -20,13 +20,14 @@ import (
 	"github.com/paul/glienicke/pkg/nips/nip44"
 	"github.com/paul/glienicke/pkg/nips/nip50"
 	"github.com/paul/glienicke/pkg/nips/nip59"
+	"github.com/paul/glienicke/pkg/nips/nip62"
 	"github.com/paul/glienicke/pkg/nips/nip65"
 	"github.com/paul/glienicke/pkg/protocol"
 	"github.com/paul/glienicke/pkg/storage"
 )
 
 // Version of the relay
-const Version = "0.12.0"
+const Version = "0.10.0"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -118,6 +119,14 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 		}
 	}
 
+	// NIP-62: Validate Request to Vanish events
+	if nip62.IsRequestToVanishEvent(evt) {
+		if err := nip62.ValidateRequestToVanish(evt); err != nil {
+			c.SendOK(evt.ID, false, fmt.Sprintf("invalid Request to Vanish: %v", err))
+			return fmt.Errorf("invalid Request to Vanish event: %w", err)
+		}
+	}
+
 	// NIP-40: Check for expired events
 	if nip40.ShouldRejectEvent(evt) {
 		c.SendOK(evt.ID, false, "event has expired")
@@ -129,6 +138,19 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 		if err := nip09.HandleDeletion(ctx, r.store, evt); err != nil {
 			log.Printf("NIP-09 deletion handling failed: %v", err)
 		}
+		return nil
+	}
+
+	// NIP-62: Handle Request to Vanish events
+	if nip62.IsRequestToVanishEvent(evt) {
+		// Get the relay URL from the request or use default
+		relayURL := "ws://localhost:8080" // This should be configurable in production
+		if err := nip62.HandleRequestToVanish(ctx, r.store, evt, relayURL); err != nil {
+			log.Printf("NIP-62 Request to Vanish handling failed: %v", err)
+			c.SendOK(evt.ID, false, fmt.Sprintf("error: failed to process Request to Vanish: %v", err))
+			return fmt.Errorf("failed to process Request to Vanish: %w", err)
+		}
+		c.SendOK(evt.ID, true, "Request to Vanish processed")
 		return nil
 	}
 
