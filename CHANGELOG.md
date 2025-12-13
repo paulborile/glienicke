@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.14.0 - 2025-12-13
+
+### Implemented NIP-04 and NIP-17 Private Messaging
+
+*   **NIP-04 Encrypted Direct Messages (Legacy Support):**
+    *   Complete AES-256-CBC encryption/decryption implementation.
+    *   Content parsing and validation for encrypted direct messages.
+    *   Recipient extraction from event tags.
+    *   Backward compatibility with existing NIP-04 clients.
+    *   Comprehensive test suite with edge case handling.
+
+*   **NIP-17 Private Direct Messages (Modern Standard):**
+    *   Full implementation of modern private messaging standard.
+    *   Private direct message creation (kind 14) and file message support (kind 15).
+    *   Multiple recipient support with proper tag management.
+    *   Reply threading support with conversation context.
+    *   Subject extraction for message organization.
+    *   Rumor validation and unsigned event handling.
+
+*   **Enhanced NIP-59 Gift Wrapping:**
+    *   Complete integration with NIP-17 for secure message delivery.
+    *   Multiple recipient gift wrapping functionality.
+    *   Random timestamp generation for privacy protection.
+    *   Full unwrapping workflow for message recipients.
+    *   Enhanced validation for sealed events and gift wraps.
+
+*   **Security Implementation:**
+    *   Modern NIP-44 encryption (XChaCha20-Poly1305 AEAD) for NIP-17.
+    *   Legacy NIP-04 encryption with proper deprecation warnings.
+    *   Metadata protection through layered encryption.
+    *   Forward secrecy and replay protection support.
+    *   Comprehensive security analysis and best practices documentation.
+
+*   **Testing Infrastructure:**
+    *   Complete test suites for both NIP-04 and NIP-17 implementations.
+    *   Integration tests for end-to-end private messaging workflows.
+    *   Security-focused test cases for encryption/decryption validation.
+    *   Performance and compatibility testing with existing clients.
+
+*   **Documentation and Migration:**
+    *   Comprehensive implementation guide with security analysis.
+    *   Client integration examples and usage patterns.
+    *   Migration strategy from NIP-04 to NIP-17.
+    *   Best practices for secure private messaging implementation.
+
 ## 0.13.0 - 2025-12-13
 
 ### Added WSS/TLS Support
