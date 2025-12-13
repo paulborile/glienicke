@@ -222,6 +222,10 @@ go clean -testcache
 ## Planned NIPs
 
 For compliance with gossip:
+- NIP-04: Encrypted Direct Message
+- NIP-17: Private Direct Message
+- NIP-22: Comment
+- NIP-28: Public Chat
 - NIP-70: Protected events
 - NIP-77: Negentropy sync
 

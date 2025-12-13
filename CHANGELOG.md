@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.13.0 - 2025-12-13
+
+### Added WSS/TLS Support
+
+*   **Secure WebSocket (WSS) Support:**
+    *   Relay now supports secure WebSocket connections with TLS encryption.
+    *   Added `StartTLS()` method for HTTPS/WSS server functionality.
+    *   New CLI flags: `-cert` and `-key` for TLS certificate and private key paths.
+
+*   **Certificate Management:**
+    *   Comprehensive certificate generation and management tools.
+    *   Support for both OpenSSL and mkcert certificate generation.
+    *   Automatic certificate configuration with proper Subject Alternative Names (SANs).
+    *   Production-ready certificates for `relay.paulstephenborile.com`.
+
+*   **Testing Infrastructure:**
+    *   Complete end-to-end WSS testing suite.
+    *   TLS certificate generation for development and testing.
+    *   Enhanced test client with TLS dialer support.
+
+*   **Documentation:**
+    *   Complete TLS certificate setup guide in `Certificates.md`.
+    *   Quick start instructions in `QUICKSTART.md`.
+    *   Gossip client debugging guide in `GOSSIP_DEBUG.md`.
+
+*   **Security and Compatibility:**
+    *   Proper certificate validation and error handling.
+    *   Support for both development and production certificate setups.
+    *   Backward compatibility with existing non-TLS connections.
+
 ## 0.12.0 - 2025-12-12
 
 ### Implemented NIP-62: Request to Vanish
