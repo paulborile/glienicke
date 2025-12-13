@@ -138,3 +138,14 @@ import (
 - Use well-maintained, actively developed packages
 - Keep dependencies up-to-date with `go get -u ./...`
 - Vendor dependencies only when necessary (currently not vendored)
+
+## Development Guidelines
+
+Every new feature implemented will follow these steps : 
+
+1. Identify features of the new NIP to be implemented
+2. Write an integrations test for the new feature : at this stage the test should fail. This is called TDD (Test Driven Design) and includes developing
+basic empty stubs for the new code so that intengration/unit tests can be written.
+3. Implement the features : if nostr specific features are needed check if available in github.com/nbd-wtf/go-nostr, otherwise implement. Keep dependency from external code at minimum, implement unit tests for new features
+4. Run unit and integration test / debug / fix / until the both test work without failures
+5. Bump the version, update README and CHANGELOG
