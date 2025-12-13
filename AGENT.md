@@ -123,7 +123,7 @@ import (
 4. Add integration tests in `test/integration/`
 5. Wire into relay orchestrator in `pkg/relay/relay.go`
 6. Update supported NIPs list in NIP-11 response
-7. Bump version and update CHANGELOG
+7. Bump version and update CHANGELOG and README
 
 ### Storage Interface
 - All storage backends must implement the `storage.Store` interface
