@@ -5,10 +5,15 @@ A modular Nostr relay implementation in Go with clean architecture and comprehen
 ## Features
 
 - **NIP-01 Compliant**: Full support for basic protocol flow (EVENT, REQ, CLOSE messages)
-- **Event Validation**: Schnorr signature verification (BIP-340)
-- **WebSocket Protocol**: Real-time bidirectional communication
-- **Modular Architecture**: Clean separation of concerns with pluggable components
-- **Comprehensive Testing**: Integration tests for all protocol aspects
+- **Secure WebSocket (WSS)**: TLS encryption support with certificate management for production deployments
+- **Private Messaging**: Complete support for both legacy (NIP-04) and modern (NIP-17) encrypted direct messages
+- **Event Validation**: Schnorr signature verification (BIP-340) with comprehensive event validation
+- **Search & Filtering**: Full-text search capability with advanced filtering options (NIP-50)
+- **Authentication**: Client authentication with challenge-response protocol (NIP-42)
+- **Event Management**: Event deletion, expiration, and bulk operations (NIP-09, NIP-40, NIP-62)
+- **WebSocket Protocol**: Real-time bidirectional communication with efficient broadcasting
+- **Modular Architecture**: Clean separation of concerns with pluggable storage backends
+- **Comprehensive Testing**: Integration tests for all protocol aspects with extensive coverage
 
 ## Quick Start
 
@@ -21,6 +26,9 @@ go build -o bin/relay ./cmd/relay
 # Run the relay (creates relay.db automatically)
 ./bin/relay -addr :8080
 
+# Run with TLS/WSS support
+./bin/relay -cert resources/relay-cert.pem -key resources/relay-key.pem -addr :8443
+
 # Run with custom database path
 ./bin/relay -addr :8080 -db /path/to/myrelay.db
 ```
@@ -28,7 +36,11 @@ go build -o bin/relay ./cmd/relay
 Or run directly:
 
 ```bash
+# Non-TLS
 go run ./cmd/relay -addr :8080
+
+# With TLS/WSS
+go run ./cmd/relay -cert resources/relay-cert.pem -key resources/relay-key.pem -addr :8443
 ```
 
 ### Database Configuration
@@ -120,11 +132,17 @@ glienicke/
 │   ├── protocol/           # WebSocket protocol handler
 │   ├── nips/               # NIP-specific implementations
 │   │   ├── nip02/          # NIP-02 (Follow Lists)
+│   │   ├── nip04/          # NIP-04 (Encrypted Direct Messages - Legacy)
 │   │   ├── nip09/          # NIP-09 (Event Deletion)
 │   │   ├── nip11/          # NIP-11 (Relay Information Document)
+│   │   ├── nip17/          # NIP-17 (Private Direct Messages - Modern)
+│   │   ├── nip40/          # NIP-40 (Event Expiration)
 │   │   ├── nip42/          # NIP-42 (Authentication)
+│   │   ├── nip44/          # NIP-44 (Encrypted Payloads)
 │   │   ├── nip45/          # NIP-45 (Event Counts)
+│   │   ├── nip50/          # NIP-50 (Search Capability)
 │   │   ├── nip56/          # NIP-56 (Reporting)
+│   │   ├── nip59/          # NIP-59 (Gift Wrapping)
 │   │   ├── nip62/          # NIP-62 (Request to Vanish)
 │   │   └── nip65/          # NIP-65 (Relay List Metadata)
 │   └── relay/              # Relay orchestrator
@@ -156,19 +174,42 @@ glienicke/
 
 ## Implemented NIPs
 
+### **Core Protocol**
+- **NIP-01: Basic Protocol Flow**: Full support for EVENT, REQ, CLOSE messages with proper WebSocket communication and event broadcasting.
+
+### **Social Features**
 - **NIP-02: Follow Lists**: Handles `kind:3` follow list events with proper validation and replaceable event support. Includes support for petnames and relay hints in `p` tags.
-- **NIP-09: Event Deletions**: Handles `kind:5` events to delete referenced events, as specified in NIP-09.
-- **NIP-11: Relay Information Document**: Serves a JSON document at relay's root URL containing metadata about the relay, including supported NIPs, name, description, and version.
-- **NIP-17: Private Direct Messages**: 
-  - **NIP-59 Gift Wrap**
-  - **NIP-44 Encrypted Payloads (Versioned)**
+
+### **Content Management**
+- **NIP-09: Event Deletions**: Handles `kind:5` events to delete referenced events with proper authorization checks.
 - **NIP-40: Event Expiration**: Supports `expiration` tag to automatically expire and filter events based on timestamp.
-- **NIP-42: Authentication**: Handles `kind:22242` AUTH events for client authentication with signature verification.
+
+### **Private Messaging**
+- **NIP-04: Encrypted Direct Messages (Legacy)**: AES-256-CBC encrypted direct messages with backward compatibility. Includes content parsing, recipient extraction, and proper encryption/decryption workflows.
+- **NIP-17: Private Direct Messages (Modern)**: Complete implementation of modern private messaging with:
+  - **NIP-44 Encryption**: XChaCha20-Poly1305 AEAD encryption for strong security
+  - **NIP-59 Gift Wrapping**: Secure message delivery with metadata protection
+  - **Multiple Recipients**: Support for group conversations
+  - **File Messages**: Kind 15 support for file sharing
+  - **Reply Threading**: Conversation context and threading support
+
+### **Security & Authentication**
+- **NIP-42: Authentication**: Handles `kind:22242` AUTH events for client authentication with signature verification and challenge-response protocol.
+
+### **Advanced Features**
+- **NIP-11: Relay Information Document**: Serves JSON metadata at root URL including supported NIPs, name, description, version, and relay capabilities.
 - **NIP-45: Event Counts**: Supports COUNT message type for efficient event counting with filters, returning `{"count": <integer>}` responses for performance optimization.
-- **NIP-50: Search Capability**: Supports full-text search across event content and tags with support for basic operators (AND, OR, NOT) and extensions like domain filtering.
-- **NIP-56: Reporting**: Handles `kind:1984` report events for flagging objectionable content including profiles, notes, and blobs with full validation support.
+- **NIP-50: Search Capability**: Full-text search across event content and tags with support for basic operators (AND, OR, NOT) and domain filtering extensions.
+- **NIP-56: Reporting**: Handles `kind:1984` report events for flagging objectionable content including profiles, notes, and blobs with comprehensive validation.
 - **NIP-62: Request to Vanish**: Handles `kind:62` events for requesting complete deletion of all events from a specific pubkey, supporting both relay-specific and global deletion requests.
 - **NIP-65: Relay List Metadata**: Handles `kind:10002` relay list events for advertising preferred relays with read/write markers and proper validation.
+
+### **Infrastructure**
+- **WSS/TLS Support**: Complete secure WebSocket implementation with:
+  - TLS certificate management and automatic HTTPS/WSS support
+  - Certificate generation tools for development and production
+  - Backward compatibility with non-TLS connections
+  - Production-ready security with proper certificate validation
 
 ## Testing
 
@@ -221,13 +262,11 @@ go clean -testcache
 
 ## Planned NIPs
 
-For compliance with gossip:
-- NIP-04: Encrypted Direct Message
-- NIP-17: Private Direct Message
-- NIP-22: Comment
-- NIP-28: Public Chat
-- NIP-70: Protected events
-- NIP-77: Negentropy sync
+For enhanced functionality and ecosystem compliance:
+- NIP-22: Comment threads and reaction handling
+- NIP-28: Public Chat channels and communities
+- NIP-70: Protected events and access control
+- NIP-77: Negentropy sync for efficient synchronization
 
 ## License
 
