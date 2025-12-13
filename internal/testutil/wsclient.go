@@ -30,6 +30,19 @@ func NewWSClient(url string) (*WSClient, error) {
 	}, nil
 }
 
+// NewWSClientWithDialer creates a new test WebSocket client with a custom dialer
+func NewWSClientWithDialer(url string, dialer *websocket.Dialer) (*WSClient, error) {
+	conn, _, err := dialer.Dial(url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial: %w", err)
+	}
+
+	return &WSClient{
+		conn:   conn,
+		events: make(map[string][]*event.Event),
+	}, nil
+}
+
 // Close closes the WebSocket connection
 func (c *WSClient) Close() error {
 	return c.conn.Close()

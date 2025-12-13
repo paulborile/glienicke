@@ -27,7 +27,7 @@ import (
 )
 
 // Version of the relay
-const Version = "0.10.0"
+const Version = "0.12.0"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -332,6 +332,23 @@ func (r *Relay) Start(addr string) error {
 	http.Handle("/", r)
 	log.Printf("Relay starting on %s", addr)
 	return http.ListenAndServe(addr, nil)
+}
+
+// StartTLS starts the relay HTTPS server with TLS certificates
+func (r *Relay) StartTLS(addr, certFile, keyFile string) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", r.ServeHTTP)
+
+	log.Printf("Relay starting with TLS on %s", addr)
+	log.Printf("Certificate file: %s", certFile)
+	log.Printf("Private key file: %s", keyFile)
+
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	return server.ListenAndServeTLS(certFile, keyFile)
 }
 
 // convertLocalEventToNostrEvent converts a local_event.Event to a nostr.Event

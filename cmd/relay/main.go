@@ -15,6 +15,8 @@ import (
 func main() {
 	addr := flag.String("addr", ":8080", "Address to listen on")
 	dbPath := flag.String("db", "relay.db", "Path to SQLite database (will be created if it doesn't exist)")
+	certFile := flag.String("cert", "", "TLS certificate file for secure WebSocket (WSS)")
+	keyFile := flag.String("key", "", "TLS private key file for secure WebSocket (WSS)")
 	flag.Parse()
 
 	// Autoconfigure SQLite storage
@@ -37,9 +39,19 @@ func main() {
 
 	// Start relay in goroutine
 	go func() {
-		log.Printf("Starting Nostr relay v%s on %s", relay.Version, *addr)
-		if err := r.Start(*addr); err != nil {
-			log.Fatalf("Relay error: %v", err)
+		if *certFile != "" && *keyFile != "" {
+			log.Printf("Starting Nostr relay v%s with TLS on %s (WSS)", relay.Version, *addr)
+			log.Printf("Certificate: %s", *certFile)
+			log.Printf("Private key: %s", *keyFile)
+			if err := r.StartTLS(*addr, *certFile, *keyFile); err != nil {
+				log.Fatalf("Relay error: %v", err)
+			}
+		} else {
+			log.Printf("Starting Nostr relay v%s on %s (unencrypted WS)", relay.Version, *addr)
+			log.Println("WARNING: Using unencrypted WebSocket connections. Use -cert and -key flags for production.")
+			if err := r.Start(*addr); err != nil {
+				log.Fatalf("Relay error: %v", err)
+			}
 		}
 	}()
 
