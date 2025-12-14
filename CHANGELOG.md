@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.15.0 - 2025-12-13
+
+### Implemented NIP-22 Comment Threads
+
+*   **NIP-22 Comment Events (Kind 1111):**
+    *   Complete implementation of comment threading for various content types.
+    *   Support for comments on blog posts, files, web URLs, and podcasts.
+    *   Proper validation of root scope (uppercase tags: E, A, I, K, P) and parent scope (lowercase tags: e, a, i, k, p).
+    *   Thread structure analysis with top-level comment vs reply detection.
+    *   Prevention of comments on kind 1 notes (redirects to NIP-10).
+
+*   **Tag Relationship Validation:**
+    *   Mandatory K and k tags for root and parent kind specification.
+    *   Validation of tag relationships and consistency.
+    *   Support for special kinds like "web" for URL-based comments.
+    *   Proper handling of event addresses vs event IDs.
+
+*   **Content and Structure Validation:**
+    *   Plaintext content requirement (no HTML/Markdown).
+    *   Non-empty content validation.
+    *   Comprehensive tag structure validation.
+    *   Error messages for invalid comment structures.
+
+*   **Integration and Testing:**
+    *   Full integration with relay event processing pipeline.
+    *   Comprehensive unit tests covering all validation scenarios.
+    *   Integration tests for end-to-end comment workflows.
+    *   Test coverage for top-level comments, replies, and edge cases.
+
+*   **Updated NIP-11 Support:**
+    *   Added NIP-22 to supported NIPs list in relay information document.
+    *   Updated documentation to reflect new comment threading capabilities.
+
 ## 0.14.0 - 2025-12-13
 
 ### Implemented NIP-04 and NIP-17 Private Messaging

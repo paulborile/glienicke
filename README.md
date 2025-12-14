@@ -136,6 +136,7 @@ glienicke/
 │   │   ├── nip09/          # NIP-09 (Event Deletion)
 │   │   ├── nip11/          # NIP-11 (Relay Information Document)
 │   │   ├── nip17/          # NIP-17 (Private Direct Messages - Modern)
+│   │   ├── nip22/          # NIP-22 (Comment Threads)
 │   │   ├── nip40/          # NIP-40 (Event Expiration)
 │   │   ├── nip42/          # NIP-42 (Authentication)
 │   │   ├── nip44/          # NIP-44 (Encrypted Payloads)
@@ -179,6 +180,7 @@ glienicke/
 
 ### **Social Features**
 - **NIP-02: Follow Lists**: Handles `kind:3` follow list events with proper validation and replaceable event support. Includes support for petnames and relay hints in `p` tags.
+- **NIP-22: Comment Threads**: Handles `kind:1111` comment events for threaded discussions on various content types including blog posts, files, and web URLs. Includes proper validation of root/parent tag relationships and prevents comments on kind 1 notes (which should use NIP-10 instead).
 
 ### **Content Management**
 - **NIP-09: Event Deletions**: Handles `kind:5` events to delete referenced events with proper authorization checks.
@@ -258,12 +260,11 @@ go clean -testcache
 #### **Test Coverage**
 - **Memory Storage**: 17 test functions covering all major functionality
 - **SQLite Storage**: 16 test functions with real database behavior validation
-- **Integration Tests**: Tests for all implemented NIPs (01, 02, 09, 11, 17, 40, 42, 44, 45, 50, 56, 62, 65)
+- **Integration Tests**: Tests for all implemented NIPs (01, 02, 09, 11, 17, 22, 40, 42, 44, 45, 50, 56, 62, 65)
 
 ## Planned NIPs
 
 For enhanced functionality and ecosystem compliance:
-- NIP-22: Comment threads and reaction handling
 - NIP-28: Public Chat channels and communities
 - NIP-70: Protected events and access control
 - NIP-77: Negentropy sync for efficient synchronization
