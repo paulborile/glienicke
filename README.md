@@ -11,6 +11,7 @@ A modular Nostr relay implementation in Go with clean architecture and comprehen
 - **Search & Filtering**: Full-text search capability with advanced filtering options (NIP-50)
 - **Authentication**: Client authentication with challenge-response protocol (NIP-42)
 - **Event Management**: Event deletion, expiration, and bulk operations (NIP-09, NIP-40, NIP-62)
+- **Social Features**: Reactions, comments, and long-form content support (NIP-22, NIP-25)
 - **WebSocket Protocol**: Real-time bidirectional communication with efficient broadcasting
 - **Modular Architecture**: Clean separation of concerns with pluggable storage backends
 - **Comprehensive Testing**: Integration tests for all protocol aspects with extensive coverage
