@@ -115,7 +115,7 @@ func (s *Store) SaveEvent(ctx context.Context, evt *event.Event) error {
 // QueryEvents retrieves events matching the filters
 func (s *Store) QueryEvents(ctx context.Context, filters []*event.Filter) ([]*event.Event, error) {
 	if len(filters) == 0 {
-		return nil, nil
+		return []*event.Event{}, nil
 	}
 
 	var results []*event.Event
@@ -218,9 +218,11 @@ func (s *Store) queryFilter(ctx context.Context, filter *event.Filter) ([]*event
 	}
 	defer rows.Close()
 
-	var events []*event.Event
+	events := make([]*event.Event, 0)
 	for rows.Next() {
-		evt := &event.Event{}
+		evt := &event.Event{
+			Tags: [][]string{}, // Initialize to prevent null
+		}
 		var tagsJSON sql.NullString
 
 		err := rows.Scan(&evt.ID, &evt.PubKey, &evt.CreatedAt, &evt.Kind, &tagsJSON, &evt.Content, &evt.Sig)
@@ -232,7 +234,12 @@ func (s *Store) queryFilter(ctx context.Context, filter *event.Filter) ([]*event
 		if tagsJSON.Valid && tagsJSON.String != "" && tagsJSON.String != "[]" {
 			// Simple JSON parsing for tags array
 			// This is a basic implementation - in production you might want a proper JSON parser
-			evt.Tags = parseTagsJSON(tagsJSON.String)
+			parsedTags := parseTagsJSON(tagsJSON.String)
+			if parsedTags != nil {
+				evt.Tags = parsedTags
+			} else {
+				evt.Tags = [][]string{}
+			}
 		}
 
 		events = append(events, evt)
@@ -247,7 +254,7 @@ func parseTagsJSON(jsonStr string) [][]string {
 	// Remove outer brackets
 	jsonStr = strings.TrimSpace(jsonStr)
 	if !strings.HasPrefix(jsonStr, "[") || !strings.HasSuffix(jsonStr, "]") {
-		return nil
+		return [][]string{}
 	}
 	jsonStr = jsonStr[1 : len(jsonStr)-1]
 
@@ -402,7 +409,9 @@ func (s *Store) GetEvent(ctx context.Context, eventID string) (*event.Event, err
 	}
 
 	// Get event
-	evt := &event.Event{}
+	evt := &event.Event{
+		Tags: [][]string{}, // Initialize to prevent null
+	}
 	var tagsJSON sql.NullString
 
 	err = s.db.QueryRowContext(ctx,
@@ -417,7 +426,12 @@ func (s *Store) GetEvent(ctx context.Context, eventID string) (*event.Event, err
 
 	// Parse tags JSON if present
 	if tagsJSON.Valid && tagsJSON.String != "" && tagsJSON.String != "[]" {
-		evt.Tags = parseTagsJSON(tagsJSON.String)
+		parsedTags := parseTagsJSON(tagsJSON.String)
+		if parsedTags != nil {
+			evt.Tags = parsedTags
+		} else {
+			evt.Tags = [][]string{}
+		}
 	}
 
 	return evt, nil

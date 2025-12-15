@@ -96,7 +96,7 @@ func TestGossipRelay_AnonymousOutboxReading(t *testing.T) {
 	assert.Len(t, events, 1, "Should receive exactly one outbox event")
 
 	if len(events) > 0 {
-		assert.Equal(t, outboxEvent.ID, events[0].ID, "Should receive the correct outbox event")
+		assert.Equal(t, outboxEvent.ID, events[0].ID, "Should receive correct outbox event")
 		t.Logf("✅ Anonymous outbox reading test passed - Found event: %s", events[0].ID)
 	}
 }
