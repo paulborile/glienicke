@@ -16,6 +16,7 @@ import (
 	"github.com/paul/glienicke/pkg/nips/nip09"
 	"github.com/paul/glienicke/pkg/nips/nip11"
 	"github.com/paul/glienicke/pkg/nips/nip22"
+	"github.com/paul/glienicke/pkg/nips/nip25"
 	"github.com/paul/glienicke/pkg/nips/nip40"
 	"github.com/paul/glienicke/pkg/nips/nip42"
 	"github.com/paul/glienicke/pkg/nips/nip44"
@@ -61,7 +62,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Description:   "A Nostr relay written in Go",
 			Software:      "https://github.com/paul/glienicke",
 			Version:       r.version,
-			SupportedNIPs: []int{1, 2, 4, 9, 11, 17, 22, 40, 42, 44, 45, 50, 59, 62, 65},
+			SupportedNIPs: []int{1, 2, 4, 9, 11, 17, 22, 25, 40, 42, 44, 45, 50, 59, 62, 65},
 		}
 
 		w.Header().Set("Content-Type", "application/nostr+json")
@@ -117,6 +118,14 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 		if err := nip22.ValidateComment(evt); err != nil {
 			c.SendOK(evt.ID, false, fmt.Sprintf("invalid comment: %v", err))
 			return fmt.Errorf("invalid comment event: %w", err)
+		}
+	}
+
+	// NIP-25: Validate reaction events
+	if nip25.IsReactionEvent(evt) {
+		if err := nip25.ValidateReaction(evt); err != nil {
+			c.SendOK(evt.ID, false, fmt.Sprintf("invalid reaction: %v", err))
+			return fmt.Errorf("invalid reaction event: %w", err)
 		}
 	}
 
