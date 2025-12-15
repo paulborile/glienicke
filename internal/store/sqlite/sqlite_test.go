@@ -396,10 +396,10 @@ func TestSQLiteStore_EmptyResults(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Test empty queries - SQLite returns nil for empty filters, which is acceptable behavior
+	// Test empty queries - SQLite returns empty slice for empty filters, which is acceptable behavior
 	events, err := store.QueryEvents(ctx, []*event.Filter{})
 	require.NoError(t, err)
-	require.Nil(t, events) // Should be nil for empty filters
+	require.Empty(t, events) // Should be empty for empty filters
 
 	// Test non-matching filter
 	filter := &event.Filter{Authors: []string{"nonexistent"}}
