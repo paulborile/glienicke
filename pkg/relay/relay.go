@@ -29,7 +29,7 @@ import (
 )
 
 // Version of the relay
-const Version = "0.15.0"
+const Version = "0.15.1"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {

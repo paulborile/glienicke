@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.15.1 - 2025-12-15
+
+### Fixed Gossip Relay JSON Serialization Bug
+
+*   **JSON Response Format Fix:**
+    *   Fixed critical bug where relay returned `null` instead of empty array `[]` when no events matched a filter.
+    *   Issue was in SQLite storage layer returning `nil` slice instead of empty slice for empty filter sets.
+    *   This caused gossip clients to fail with "invalid type: null, expected a sequence" error.
+
+*   **Root Cause:**
+    *   SQLite `QueryEvents()` function returned `nil` when no filters provided instead of `[]*event.Event{}`.
+    *   JSON marshaling of `nil` slice produces `null`, violating NIP-01 specification.
+
+*   **Fix Details:**
+    *   Updated `internal/store/sqlite/sqlite.go` line 118 to return empty slice instead of `nil`.
+    *   Ensures compliance with NIP-01 requirement for array responses in EVENT messages.
+    *   All gossip relay tests now pass successfully.
+
+*   **Technical Details:**
+    *   Fixed SQLite storage layer to initialize Event.Tags with empty slice instead of nil.
+    *   Updated parseTagsJSON() to return empty slice instead of nil for invalid JSON.
+    *   Ensured all Event struct initialization includes Tags field initialization.
+
+*   **Impact:**
+    *   Gossip protocol compatibility restored.
+    *   No more JSON parsing errors in gossip clients.
+    *   Proper handling of empty result sets across all query types.
+    *   Full compliance with NIP-01 JSON array requirements.
+
 ## 0.15.0 - 2025-12-13
 
 ### Implemented NIP-22 Comment Threads
