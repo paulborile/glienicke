@@ -5,6 +5,7 @@ go 1.25.1
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
 	github.com/gorilla/websocket v1.5.3
+	github.com/juju/ratelimit v1.0.2
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/nbd-wtf/go-nostr v0.52.3
 	github.com/stretchr/testify v1.10.0

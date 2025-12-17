@@ -1,0 +1,27 @@
+# Rate Limiting Configuration
+# Controls relay rate limits and connection management
+
+# Global Rate Limits
+global:
+  event_limit: "1000/s"
+  req_limit: "10/s"
+  count_limit: "5/s"
+
+# Per-IP Rate Limits
+ip:
+  event_limit: "1/minute"
+  req_limit: "10/s"
+  count_limit: "1/s"
+  max_connections: 10
+
+# Event Limits
+event_limits:
+  max_size: 10000
+  max_content_length: 1000
+  max_events_per_minute: 60
+
+# Connection Limits
+connection_limits:
+  max_per_ip: 10
+  max_global: 1000
+  timeout: "5m"
