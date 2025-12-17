@@ -48,7 +48,7 @@ type Client struct {
 
 // NewClient creates a new WebSocket client
 func NewClient(conn *websocket.Conn, handler Handler) *Client {
-	log.Printf("New connection from %s", conn.RemoteAddr())
+	// log.Printf("New connection from %s", conn.RemoteAddr())
 	return &Client{
 		conn:          conn,
 		handler:       handler,
