@@ -10,6 +10,7 @@ import (
 
 	"github.com/paul/glienicke/internal/store/memory"
 	"github.com/paul/glienicke/internal/testutil"
+	"github.com/paul/glienicke/pkg/config"
 	"github.com/paul/glienicke/pkg/event"
 	"github.com/paul/glienicke/pkg/relay"
 )
@@ -19,7 +20,8 @@ func setupRelay(t *testing.T) (string, *relay.Relay, func()) {
 	t.Helper()
 
 	store := memory.New()
-	r := relay.New(store)
+	config := config.DefaultRateLimitConfig()
+	r := relay.New(store, config)
 
 	// Find available port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

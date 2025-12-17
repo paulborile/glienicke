@@ -2,15 +2,18 @@ package relay
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
-
-	"encoding/json"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/paul/glienicke/pkg/config"
 	"github.com/paul/glienicke/pkg/event"
 	"github.com/paul/glienicke/pkg/nips/nip02"
 	"github.com/paul/glienicke/pkg/nips/nip09"
@@ -25,6 +28,7 @@ import (
 	"github.com/paul/glienicke/pkg/nips/nip62"
 	"github.com/paul/glienicke/pkg/nips/nip65"
 	"github.com/paul/glienicke/pkg/protocol"
+	"github.com/paul/glienicke/pkg/ratelimit"
 	"github.com/paul/glienicke/pkg/storage"
 )
 
@@ -39,18 +43,27 @@ var upgrader = websocket.Upgrader{
 
 // Relay is the main relay orchestrator
 type Relay struct {
-	store     storage.Store
-	clients   map[*protocol.Client]bool
-	clientsMu sync.RWMutex
-	version   string
+	store             storage.Store
+	clients           map[*protocol.Client]bool
+	clientsMu         sync.RWMutex
+	version           string
+	config            *config.RateLimitConfig
+	rateLimiters      map[string]*ratelimit.Limiter
+	ipLimitersMu      sync.RWMutex
+	ipConnections     map[string]int
+	globalConnections int
+	connMu            sync.RWMutex
 }
 
 // New creates a new relay instance
-func New(store storage.Store) *Relay {
+func New(store storage.Store, config *config.RateLimitConfig) *Relay {
 	return &Relay{
-		store:   store,
-		clients: make(map[*protocol.Client]bool),
-		version: Version,
+		store:         store,
+		clients:       make(map[*protocol.Client]bool),
+		version:       Version,
+		config:        config,
+		rateLimiters:  make(map[string]*ratelimit.Limiter),
+		ipConnections: make(map[string]int),
 	}
 }
 
@@ -70,6 +83,16 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Get client IP for connection limiting
+	clientIP := r.getClientIP(req)
+
+	// Check connection limits before upgrading
+	if !r.canAcceptConnection(clientIP) {
+		log.Printf("Connection rejected for %s: connection limit exceeded", clientIP)
+		http.Error(w, "Connection limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, req, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
@@ -79,6 +102,8 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	client := protocol.NewClient(conn, r)
 
+	// Register connection
+	r.addConnection(clientIP)
 	r.clientsMu.Lock()
 	r.clients[client] = true
 	r.clientsMu.Unlock()
@@ -87,6 +112,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		r.clientsMu.Lock()
 		delete(r.clients, client)
 		r.clientsMu.Unlock()
+		r.removeConnection(clientIP)
 		client.Close()
 	}()
 
@@ -95,6 +121,18 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // HandleEvent processes an EVENT message from a client
 func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.Event) error {
+	// Check rate limits
+	if !r.checkRateLimit(c.RemoteAddr(), "event") {
+		c.SendOK(evt.ID, false, "rate-limited: too many events")
+		return fmt.Errorf("rate limit exceeded for events from %s", c.RemoteAddr())
+	}
+
+	// Validate event size
+	if !r.validateEventSize(evt) {
+		c.SendOK(evt.ID, false, "invalid: event too large")
+		return fmt.Errorf("event size exceeds limits")
+	}
+
 	// NIP-42: Handle AUTH events
 	if nip42.IsAuthEvent(evt) {
 		if err := nip42.ValidateAuthEvent(evt); err != nil {
@@ -214,6 +252,12 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 
 // HandleReq processes a REQ message from a client
 func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string, filters []*event.Filter) error {
+	// Check rate limits
+	if !r.checkRateLimit(c.RemoteAddr(), "req") {
+		c.SendClosed(subID, "rate-limited: too many requests")
+		return fmt.Errorf("rate limit exceeded for requests from %s", c.RemoteAddr())
+	}
+
 	var events []*event.Event
 	var err error
 
@@ -272,6 +316,12 @@ func (r *Relay) HandleClose(ctx context.Context, c *protocol.Client, subID strin
 func (r *Relay) HandleCount(ctx context.Context, c *protocol.Client, countID string, filters []*event.Filter) error {
 	log.Printf("Received COUNT request %s from client %s", countID, c.RemoteAddr())
 
+	// Check rate limits
+	if !r.checkRateLimit(c.RemoteAddr(), "count") {
+		c.SendClosed(countID, "rate-limited: too many count requests")
+		return fmt.Errorf("rate limit exceeded for count requests from %s", c.RemoteAddr())
+	}
+
 	// Validate filters
 	if len(filters) == 0 {
 		c.SendClosed(countID, "error: no filters provided")
@@ -294,6 +344,192 @@ func (r *Relay) HandleCount(ctx context.Context, c *protocol.Client, countID str
 
 	log.Printf("COUNT request %s returned %d events", countID, count)
 	return nil
+}
+
+// parseRateLimit parses rate limit string like "1000/s" or "1/minute"
+func (r *Relay) parseRateLimit(rateStr string) (tokensPerSecond float64, err error) {
+	if rateStr == "" {
+		return 0, fmt.Errorf("empty rate limit string")
+	}
+
+	parts := strings.Split(rateStr, "/")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("invalid rate limit format: %s", rateStr)
+	}
+
+	tokens, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid token count: %s", parts[0])
+	}
+
+	unit := strings.ToLower(parts[1])
+	var interval time.Duration
+	switch unit {
+	case "s", "sec", "second":
+		interval = time.Second
+	case "m", "min", "minute":
+		interval = time.Minute
+	case "h", "hr", "hour":
+		interval = time.Hour
+	default:
+		return 0, fmt.Errorf("unknown time unit: %s", unit)
+	}
+
+	tokensPerSecond = tokens / interval.Seconds()
+	return tokensPerSecond, nil
+}
+
+// getLimiter gets or creates a rate limiter for a specific key
+func (r *Relay) getLimiter(key, rateLimit string) *ratelimit.Limiter {
+	r.ipLimitersMu.Lock()
+	defer r.ipLimitersMu.Unlock()
+
+	limiter, exists := r.rateLimiters[key]
+	if !exists {
+		tokensPerSecond, err := r.parseRateLimit(rateLimit)
+		if err != nil {
+			// Default to 10 tokens per second on error
+			limiter = ratelimit.New(10, 10)
+		} else {
+			capacity := int64(tokensPerSecond)
+			if capacity == 0 {
+				capacity = 1
+			}
+			limiter = ratelimit.New(tokensPerSecond, capacity)
+		}
+		r.rateLimiters[key] = limiter
+	}
+
+	return limiter
+}
+
+// checkRateLimit checks if a request should be rate limited
+func (r *Relay) checkRateLimit(clientAddr, requestType string) bool {
+	var limitStr string
+
+	switch requestType {
+	case "event":
+		// Check per-IP event limit
+		limitStr = r.config.IPEventLimit
+		limiter := r.getLimiter(clientAddr+":event", limitStr)
+		if !limiter.Allow() {
+			return false
+		}
+
+		// Check global event limit
+		globalLimiter := r.getLimiter("global:event", r.config.GlobalEventLimit)
+		return globalLimiter.Allow()
+
+	case "req":
+		// Check per-IP REQ limit
+		limitStr = r.config.IPReqLimit
+		limiter := r.getLimiter(clientAddr+":req", limitStr)
+		if !limiter.Allow() {
+			return false
+		}
+
+		// Check global REQ limit
+		globalLimiter := r.getLimiter("global:req", r.config.GlobalReqLimit)
+		return globalLimiter.Allow()
+
+	case "count":
+		// Check per-IP COUNT limit
+		limitStr = r.config.IPCountLimit
+		limiter := r.getLimiter(clientAddr+":count", limitStr)
+		if !limiter.Allow() {
+			return false
+		}
+
+		// Check global COUNT limit
+		globalLimiter := r.getLimiter("global:count", r.config.GlobalCountLimit)
+		return globalLimiter.Allow()
+
+	default:
+		return true // Unknown request type, allow
+	}
+}
+
+// validateEventSize checks if event size is within limits
+func (r *Relay) validateEventSize(evt *event.Event) bool {
+	// Check event size in bytes
+	if r.config.MaxEventSize > 0 && len(evt.Content) > r.config.MaxEventSize {
+		return false
+	}
+
+	// Check content length in characters
+	if r.config.MaxContentLength > 0 && len([]rune(evt.Content)) > r.config.MaxContentLength {
+		return false
+	}
+
+	return true
+}
+
+// canAcceptConnection checks if a new connection from the given IP should be allowed
+func (r *Relay) canAcceptConnection(clientAddr string) bool {
+	r.connMu.Lock()
+	defer r.connMu.Unlock()
+
+	// Check global connection limit
+	if r.globalConnections >= r.config.MaxGlobal {
+		return false
+	}
+
+	// Check per-IP connection limit
+	currentConnections := r.ipConnections[clientAddr]
+	if currentConnections >= r.config.MaxPerIP {
+		return false
+	}
+
+	return true
+}
+
+// addConnection registers a new connection
+func (r *Relay) addConnection(clientAddr string) {
+	r.connMu.Lock()
+	defer r.connMu.Unlock()
+
+	r.globalConnections++
+	r.ipConnections[clientAddr]++
+}
+
+// removeConnection removes a connection
+func (r *Relay) removeConnection(clientAddr string) {
+	r.connMu.Lock()
+	defer r.connMu.Unlock()
+
+	r.globalConnections--
+	if r.globalConnections < 0 {
+		r.globalConnections = 0
+	}
+
+	r.ipConnections[clientAddr]--
+	if r.ipConnections[clientAddr] <= 0 {
+		delete(r.ipConnections, clientAddr)
+	}
+}
+
+// getClientIP extracts the real client IP from request
+func (r *Relay) getClientIP(req *http.Request) string {
+	// Check for X-Forwarded-For header (proxy)
+	if xff := req.Header.Get("X-Forwarded-For"); xff != "" {
+		// Take first IP if multiple
+		if idx := strings.Index(xff, ","); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+
+	// Check for X-Real-IP header
+	if xri := req.Header.Get("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
+
+	// Fall back to RemoteAddr
+	ip := req.RemoteAddr
+	if idx := strings.LastIndex(ip, ":"); idx != -1 {
+		ip = ip[:idx]
+	}
+	return strings.TrimSpace(ip)
 }
 
 // broadcastEvent sends an event to all clients with matching subscriptions

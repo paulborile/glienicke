@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/paul/glienicke/internal/store/sqlite"
+	"github.com/paul/glienicke/pkg/config"
 	"github.com/paul/glienicke/pkg/relay"
 )
 
@@ -17,7 +18,21 @@ func main() {
 	dbPath := flag.String("db", "relay.db", "Path to SQLite database (will be created if it doesn't exist)")
 	certFile := flag.String("cert", "", "TLS certificate file for secure WebSocket (WSS)")
 	keyFile := flag.String("key", "", "TLS private key file for secure WebSocket (WSS)")
+	configPath := flag.String("config", "config/relay.yaml", "Path to rate limit configuration file")
 	flag.Parse()
+
+	// Load rate limit configuration
+	rateLimitConfig, err := config.LoadRateLimitConfig(*configPath)
+	if err != nil {
+		log.Printf("Warning: Failed to load rate limit config from %s: %v", *configPath, err)
+		log.Printf("Using default rate limit configuration")
+		rateLimitConfig = config.DefaultRateLimitConfig()
+	}
+
+	// Validate configuration
+	if err := config.ValidateRateLimitConfig(rateLimitConfig); err != nil {
+		log.Fatalf("Invalid rate limit configuration: %v", err)
+	}
 
 	// Autoconfigure SQLite storage
 	expandedPath := expandPath(*dbPath)
@@ -29,8 +44,8 @@ func main() {
 	}
 	defer store.Close()
 
-	// Create relay
-	r := relay.New(store)
+	// Create relay with configuration
+	r := relay.New(store, rateLimitConfig)
 	defer r.Close()
 
 	// Handle shutdown gracefully

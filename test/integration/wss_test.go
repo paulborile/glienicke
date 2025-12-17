@@ -17,11 +17,13 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/paul/glienicke/internal/store/memory"
 	"github.com/paul/glienicke/internal/testutil"
+	"github.com/paul/glienicke/pkg/config"
 	"github.com/paul/glienicke/pkg/relay"
 )
 
 func TestWSS_StartTLSMethodExists(t *testing.T) {
-	r := relay.New(nil)
+	config := config.DefaultRateLimitConfig()
+	r := relay.New(nil, config)
 	defer func() {
 		if r := recover(); r != nil {
 			t.Log("StartTLS method not implemented")
@@ -46,7 +48,8 @@ func TestWSS_EndToEndConnection(t *testing.T) {
 	defer store.Close()
 
 	// Create relay
-	r := relay.New(store)
+	testConfig := config.DefaultRateLimitConfig()
+	r := relay.New(store, testConfig)
 	defer r.Close()
 
 	// Find an available port
