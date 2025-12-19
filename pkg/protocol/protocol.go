@@ -117,10 +117,17 @@ func (c *Client) writePump(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-c.closeCh:
+			// Drain any remaining messages without attempting to send
+			for len(c.sendCh) > 0 {
+				<-c.sendCh
+			}
 			return
 		case message := <-c.sendCh:
 			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
-				log.Printf("WebSocket write error: %v", err)
+				// Only log if it's not a normal connection closure
+				if !websocket.IsCloseError(err) && !websocket.IsUnexpectedCloseError(err) {
+					// log.Printf("WebSocket write error: %v", err)
+				}
 				return
 			}
 		}

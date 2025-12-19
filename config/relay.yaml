@@ -6,24 +6,31 @@ global:
   # Maximum events per second across entire relay
   event_limit: "1000/s"
   # Maximum REQ (subscription) requests per second across entire relay  
-  req_limit: "10/s"
+  # req_limit: "10/s"
+  req_limit: "1000/s"
   # Maximum COUNT requests per second across entire relay
-  count_limit: "5/s"
+  # count_limit: "5/s"
+  count_limit: "5000/s"
   # Maximum total concurrent connections across all IPs
-  max_connections: 1000
+  # max_connections: 1000
+  max_connections: 10000000
   # Connection timeout - automatically disconnect slow/idle connections
   timeout: "5m"
 
 # Per-IP Rate Limits - Apply to each individual client IP address
 ip:
   # Maximum events per minute per IP address
-  event_limit: "1/minute"
+  # event_limit: "1/minute"
+  event_limit: "100000/minute"
   # Maximum REQ requests per second per IP address
-  req_limit: "10/s"
+  # req_limit: "10/s"
+  req_limit: "1000000/s"
   # Maximum COUNT requests per second per IP address  
-  count_limit: "1/s"
+  # count_limit: "1/s"
+  count_limit: "100000/s"
   # Maximum concurrent connections per IP address
-  max_connections: 10
+  # max_connections: 10
+  max_connections: 10000000
 
 # Event Validation Limits - Prevent oversized or malformed events
 event_object_limits:

@@ -406,47 +406,65 @@ func (r *Relay) getLimiter(key, rateLimit string) *ratelimit.Limiter {
 // checkRateLimit checks if a request should be rate limited
 func (r *Relay) checkRateLimit(clientAddr, requestType string) bool {
 	var limitStr string
+	var globalLimitStr string
 
 	switch requestType {
 	case "event":
 		// Check per-IP event limit
 		limitStr = r.config.IPEventLimit
+		globalLimitStr = r.config.GlobalEventLimit
 		limiter := r.getLimiter(clientAddr+":event", limitStr)
 		if !limiter.Allow() {
+			log.Printf("RATE_LIMITED: EVENT from %s (per-IP limit: %s)", clientAddr, limitStr)
 			return false
 		}
 
 		// Check global event limit
-		globalLimiter := r.getLimiter("global:event", r.config.GlobalEventLimit)
-		return globalLimiter.Allow()
+		globalLimiter := r.getLimiter("global:event", globalLimitStr)
+		if !globalLimiter.Allow() {
+			log.Printf("RATE_LIMITED: EVENT from %s (global limit: %s)", clientAddr, globalLimitStr)
+			return false
+		}
 
 	case "req":
 		// Check per-IP REQ limit
 		limitStr = r.config.IPReqLimit
+		globalLimitStr = r.config.GlobalReqLimit
 		limiter := r.getLimiter(clientAddr+":req", limitStr)
 		if !limiter.Allow() {
+			log.Printf("RATE_LIMITED: REQ from %s (per-IP limit: %s)", clientAddr, limitStr)
 			return false
 		}
 
 		// Check global REQ limit
-		globalLimiter := r.getLimiter("global:req", r.config.GlobalReqLimit)
-		return globalLimiter.Allow()
+		globalLimiter := r.getLimiter("global:req", globalLimitStr)
+		if !globalLimiter.Allow() {
+			log.Printf("RATE_LIMITED: REQ from %s (global limit: %s)", clientAddr, globalLimitStr)
+			return false
+		}
 
 	case "count":
 		// Check per-IP COUNT limit
 		limitStr = r.config.IPCountLimit
+		globalLimitStr = r.config.GlobalCountLimit
 		limiter := r.getLimiter(clientAddr+":count", limitStr)
 		if !limiter.Allow() {
+			log.Printf("RATE_LIMITED: COUNT from %s (per-IP limit: %s)", clientAddr, limitStr)
 			return false
 		}
 
 		// Check global COUNT limit
-		globalLimiter := r.getLimiter("global:count", r.config.GlobalCountLimit)
-		return globalLimiter.Allow()
+		globalLimiter := r.getLimiter("global:count", globalLimitStr)
+		if !globalLimiter.Allow() {
+			log.Printf("RATE_LIMITED: COUNT from %s (global limit: %s)", clientAddr, globalLimitStr)
+			return false
+		}
 
 	default:
 		return true // Unknown request type, allow
 	}
+
+	return true
 }
 
 // validateEventSize checks if event size is within limits

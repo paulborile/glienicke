@@ -46,7 +46,7 @@ test_client() {
         else
             ((errors++))
         fi
-        sleep 2
+     #   sleep 2
     done
     
     echo "Client $client_id: $success success, $errors errors"
@@ -62,7 +62,7 @@ for i in $(seq 1 $NUM_CLIENTS); do
     test_client $i $TEST_DURATION &
     
     # Don't overwhelm relay
-    if [[ $((i % 5)) -eq 0 ]]; then
+    if [[ $((i % 50)) -eq 0 ]]; then
         wait
     fi
 done
