@@ -11,7 +11,7 @@ import (
 )
 
 func TestNIP22_CommentThreads(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -138,7 +138,7 @@ func TestNIP22_CommentThreads(t *testing.T) {
 }
 
 func TestNIP22_CommentValidation(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -256,7 +256,7 @@ func TestNIP22_CommentValidation(t *testing.T) {
 }
 
 func TestNIP22_CommentOnKind1ShouldFail(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)

@@ -15,7 +15,7 @@ const (
 )
 
 func TestNIP09_EventDeletion(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)

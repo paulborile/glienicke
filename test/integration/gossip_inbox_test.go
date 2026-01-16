@@ -11,7 +11,7 @@ import (
 )
 
 func TestGossipRelay_AnonymousInboxPosting(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	// Create authenticated client to post outbox event
@@ -77,7 +77,7 @@ func TestGossipRelay_AnonymousInboxPosting(t *testing.T) {
 }
 
 func TestGossipRelay_AnonymousInboxReading(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	// Setup: Create user and outbox event
@@ -161,7 +161,7 @@ func TestGossipRelay_AnonymousInboxReading(t *testing.T) {
 }
 
 func TestGossipRelay_AuthenticatedInboxReading(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	// Setup: Create user and outbox event

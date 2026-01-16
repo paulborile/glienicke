@@ -12,6 +12,7 @@ A modular Nostr relay implementation in Go with clean architecture and comprehen
 - **Authentication**: Client authentication with challenge-response protocol (NIP-42)
 - **Event Management**: Event deletion, expiration, and bulk operations (NIP-09, NIP-40, NIP-62)
 - **Social Features**: Reactions, comments, and long-form content support (NIP-22, NIP-25)
+- **Health Monitoring**: Production-ready `/health` endpoint with real-time metrics and monitoring integration
 - **WebSocket Protocol**: Real-time bidirectional communication with efficient broadcasting
 - **Modular Architecture**: Clean separation of concerns with pluggable storage backends
 - **Comprehensive Testing**: Integration tests for all protocol aspects with extensive coverage
@@ -201,6 +202,7 @@ glienicke/
 
 ### **Advanced Features**
 - **NIP-11: Relay Information Document**: Serves JSON metadata at root URL including supported NIPs, name, description, version, and relay capabilities.
+- **Health Monitoring**: Production-ready `/health` endpoint providing real-time operational metrics for monitoring systems and load balancers.
 - **NIP-45: Event Counts**: Supports COUNT message type for efficient event counting with filters, returning `{"count": <integer>}` responses for performance optimization.
 - **NIP-50: Search Capability**: Full-text search across event content and tags with support for basic operators (AND, OR, NOT) and domain filtering extensions.
 - **NIP-56: Reporting**: Handles `kind:1984` report events for flagging objectionable content including profiles, notes, and blobs with comprehensive validation.
@@ -213,6 +215,52 @@ glienicke/
   - Certificate generation tools for development and production
   - Backward compatibility with non-TLS connections
   - Production-ready security with proper certificate validation
+
+## API Endpoints
+
+### Health Monitoring
+
+The relay provides a `/health` endpoint for production monitoring and operational visibility:
+
+```bash
+# Health check
+curl http://localhost:8080/health
+
+# Example response
+{
+  "status": "healthy",
+  "uptime_seconds": 1234.56,
+  "version": "0.16.0",
+  "active_connections": 5,
+  "total_connections": 127,
+  "total_events": 4521,
+  "total_requests": 893,
+  "packets_per_second": 12.3,
+  "rate_limited_count": 8,
+  "memory_usage_mb": 45.2,
+  "database_status": "ok",
+  "timestamp": "2026-01-16T17:30:00Z"
+}
+```
+
+**Health Endpoint Features:**
+- **Real-time Metrics**: Active connections, total events/requests, packet rates
+- **System Monitoring**: Memory usage, database connectivity, uptime tracking  
+- **Production Ready**: Fast response (<100ms), proper HTTP status codes
+- **Monitoring Integration**: Compatible with Prometheus, Grafana, load balancers
+- **JSON Response**: Structured data for automated monitoring systems
+
+**Status Codes:**
+- `200 OK`: Relay is healthy and operational
+- `503 Service Unavailable`: Critical issues detected (database, etc.)
+
+### NIP-11 Relay Information
+
+Get relay metadata with proper headers:
+
+```bash
+curl -H "Accept: application/nostr+json" http://localhost:8080/
+```
 
 ## Testing
 

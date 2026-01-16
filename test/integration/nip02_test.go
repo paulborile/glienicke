@@ -14,7 +14,7 @@ const (
 )
 
 func TestNIP02_FollowList(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -133,7 +133,7 @@ func TestNIP02_FollowList(t *testing.T) {
 }
 
 func TestNIP02_FollowListValidation(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)

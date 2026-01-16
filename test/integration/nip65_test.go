@@ -14,7 +14,7 @@ const (
 )
 
 func TestNIP65_RelayListMetadata(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -148,7 +148,7 @@ func TestNIP65_RelayListMetadata(t *testing.T) {
 }
 
 func TestNIP65_RelayListValidation(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)

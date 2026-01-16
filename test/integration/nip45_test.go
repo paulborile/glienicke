@@ -14,7 +14,7 @@ const (
 )
 
 func TestNIP45_EventCounts_BasicCounting(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -50,7 +50,7 @@ func TestNIP45_EventCounts_BasicCounting(t *testing.T) {
 }
 
 func TestNIP45_EventCounts_ReactionCounting(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)

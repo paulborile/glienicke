@@ -11,7 +11,7 @@ import (
 )
 
 func TestNIP40_ExpirationTimestamp(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)

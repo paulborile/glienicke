@@ -11,7 +11,7 @@ import (
 )
 
 func TestGossipRelay_OutboxPosting(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -47,7 +47,7 @@ func TestGossipRelay_OutboxPosting(t *testing.T) {
 }
 
 func TestGossipRelay_AnonymousOutboxReading(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	// Create authenticated client to post event
