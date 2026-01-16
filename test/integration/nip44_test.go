@@ -13,7 +13,7 @@ import (
 
 func TestNIP44_EncryptedEvent(t *testing.T) {
 	// Setup: Relay and clients
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	// Generate sender and receiver key pairs

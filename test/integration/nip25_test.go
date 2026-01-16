@@ -11,7 +11,7 @@ import (
 )
 
 func TestNIP25_BasicReactionValidation(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -74,7 +74,7 @@ func TestNIP25_BasicReactionValidation(t *testing.T) {
 }
 
 func TestNIP25_RejectionValidation(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -113,7 +113,7 @@ func TestNIP25_RejectionValidation(t *testing.T) {
 }
 
 func TestNIP25_ReactionBroadcasting(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)

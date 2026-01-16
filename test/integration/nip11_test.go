@@ -12,7 +12,7 @@ import (
 )
 
 func TestNIP11_RelayInformationDocument(t *testing.T) {
-	wsURL, _, cleanup := setupRelay(t)
+	wsURL, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	httpURL := strings.Replace(wsURL, "ws://", "http://", 1)

@@ -12,7 +12,7 @@ import (
 
 func TestNIP42Authentication(t *testing.T) {
 	// Test AUTH command handling
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	// Connect client

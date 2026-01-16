@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.16.0 - 2026-01-16
+
+### Added Health Monitoring Endpoint
+
+*   **HTTP Health Endpoint (`/health`):**
+    *   New `/health` endpoint provides comprehensive relay monitoring metrics.
+    *   Returns JSON response with real-time operational data.
+    *   Suitable for monitoring systems, load balancers, and administrative dashboards.
+
+*   **Monitoring Metrics:**
+    *   **Connection Monitoring:** Active WebSocket connections count and total connections history.
+    *   **Activity Tracking:** Total events processed, requests handled, and packets per second rate.
+    *   **System Metrics:** Memory usage in MB, database connectivity status, and uptime in seconds.
+    *   **Version Information:** Relay version and build details for tracking.
+    *   **Performance Indicators:** Rate-limited requests count and response timestamp.
+
+*   **HTTP Status Codes:**
+    *   Returns `200 OK` when relay is healthy and operational.
+    *   Returns `503 Service Unavailable` when critical issues are detected (e.g., database problems).
+    *   Proper `Content-Type: application/json` header for monitoring system integration.
+
+*   **Production Features:**
+    *   **Lightweight Design:** Fast response times (< 100ms) with minimal computational overhead.
+    *   **Thread-Safe:** All metrics collection uses mutex protection for concurrent access.
+    *   **Database Health:** Automatic connectivity checking with 5-second timeout.
+    *   **Memory Tracking:** Real-time memory usage monitoring using Go runtime statistics.
+
+*   **Monitoring Integration:**
+    *   **Prometheus/Grafana Compatible:** JSON format easily consumed by monitoring infrastructure.
+    *   **Load Balancer Ready:** Suitable for health checks in production load balancer configurations.
+    *   **DevOps Friendly:** Comprehensive operational visibility for troubleshooting and capacity planning.
+
+*   **Testing Infrastructure:**
+    *   **Comprehensive Integration Tests:** Full test suite covering all health endpoint functionality.
+    *   **Performance Validation:** Response time testing ensures sub-100ms performance targets.
+    *   **Activity Simulation:** Tests verify metrics collection and real-time updates.
+    *   **Format Validation:** JSON schema validation and field completeness testing.
+
+*   **Technical Implementation:**
+    *   **HTTP Multiplexer:** Uses `http.ServeMux` for clean routing alongside WebSocket handler.
+    *   **Metrics Collection:** Real-time counters, gauges, and rate calculations.
+    *   **Database Integration:** Health checks verify storage layer connectivity and responsiveness.
+    *   **Backward Compatibility:** Preserves existing NIP-11 endpoint and WebSocket functionality.
+
+*   **Integration Points:**
+    *   **Connection Handler:** Metrics collected during WebSocket upgrade and client lifecycle.
+    *   **Event Processing:** Counters incremented for EVENT and REQ message processing.
+    *   **Packet Rate Calculation:** Sliding window calculation for packets per second.
+    *   **Memory Sampling:** Runtime memory statistics collection on each health request.
+
 ## 0.15.1 - 2025-12-15
 
 ### Fixed Gossip Relay JSON Serialization Bug

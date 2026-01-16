@@ -14,7 +14,7 @@ const (
 )
 
 func TestNIP62_RequestToVanish_RelaxSpecific(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -72,7 +72,7 @@ func TestNIP62_RequestToVanish_RelaxSpecific(t *testing.T) {
 }
 
 func TestNIP62_RequestToVanish_Global(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -130,7 +130,7 @@ func TestNIP62_RequestToVanish_Global(t *testing.T) {
 }
 
 func TestNIP62_RequestToVanish_IgnoreOtherRelays(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -188,7 +188,7 @@ func TestNIP62_RequestToVanish_IgnoreOtherRelays(t *testing.T) {
 }
 
 func TestNIP62_RequestToVanish_InvalidEvent(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
