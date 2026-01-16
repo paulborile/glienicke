@@ -14,8 +14,8 @@ import (
 	"github.com/paul/glienicke/pkg/relay"
 )
 
-// setupRelay creates a test relay and returns the WebSocket URL
-func setupRelay(t *testing.T) (string, *relay.Relay, func()) {
+// setupRelay creates a test relay and returns the WebSocket URL and HTTP URL
+func setupRelay(t *testing.T) (string, *relay.Relay, func(), string) {
 	t.Helper()
 
 	store := memory.New()
@@ -32,7 +32,7 @@ func setupRelay(t *testing.T) (string, *relay.Relay, func()) {
 	// Start relay
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: r,
+		Handler: r.GetMux(),
 	}
 
 	go func() {
@@ -44,7 +44,8 @@ func setupRelay(t *testing.T) (string, *relay.Relay, func()) {
 	// Wait for server to start
 	time.Sleep(100 * time.Millisecond)
 
-	url := fmt.Sprintf("ws://%s/", addr)
+	wsURL := fmt.Sprintf("ws://%s/", addr)
+	httpURL := fmt.Sprintf("http://%s", addr)
 	cleanup := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -52,11 +53,11 @@ func setupRelay(t *testing.T) (string, *relay.Relay, func()) {
 		r.Close()
 	}
 
-	return url, r, cleanup
+	return wsURL, r, cleanup, httpURL
 }
 
 func TestEventMessage(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -85,7 +86,7 @@ func TestEventMessage(t *testing.T) {
 }
 
 func TestEventValidation(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -128,7 +129,7 @@ func TestEventValidation(t *testing.T) {
 }
 
 func TestReqMessage(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -187,7 +188,7 @@ func TestReqMessage(t *testing.T) {
 }
 
 func TestCloseMessage(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	// Client A subscribes
@@ -247,7 +248,7 @@ func TestCloseMessage(t *testing.T) {
 }
 
 func TestEventBroadcast(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	// Connect two clients
@@ -305,7 +306,7 @@ func TestEventBroadcast(t *testing.T) {
 }
 
 func TestMultipleFilters(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
@@ -344,7 +345,7 @@ func TestMultipleFilters(t *testing.T) {
 }
 
 func TestEventWithTags(t *testing.T) {
-	url, _, cleanup := setupRelay(t)
+	url, _, cleanup, _ := setupRelay(t)
 	defer cleanup()
 
 	client, err := testutil.NewWSClient(url)
