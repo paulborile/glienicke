@@ -487,6 +487,11 @@ func (r *Relay) broadcastEvent(evt *event.Event) {
 	}
 }
 
+// GetMux returns the HTTP multiplexer for the relay
+func (r *Relay) GetMux() *http.ServeMux {
+	return r.mux
+}
+
 // Close shuts down the relay
 func (r *Relay) Close() error {
 	r.clientsMu.Lock()
