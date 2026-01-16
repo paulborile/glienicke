@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"runtime"
 	"sync"
+	"time"
 
 	"encoding/json"
 
@@ -37,21 +39,72 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+// Metrics holds relay monitoring metrics
+type Metrics struct {
+	mu               sync.RWMutex
+	startTime        time.Time
+	totalConnections int64
+	totalEvents      int64
+	totalRequests    int64
+	packetsPerSecond float64
+	lastPacketTime   time.Time
+	packetCount      int64
+	lastPacketReset  time.Time
+	rateLimitedCount int64
+	memoryUsage      uint64
+	dbStatus         string
+}
+
+// HealthResponse represents the health check response
+type HealthResponse struct {
+	Status            string  `json:"status"`
+	UptimeSeconds     float64 `json:"uptime_seconds"`
+	Version           string  `json:"version"`
+	ActiveConnections int     `json:"active_connections"`
+	TotalConnections  int64   `json:"total_connections"`
+	TotalEvents       int64   `json:"total_events"`
+	TotalRequests     int64   `json:"total_requests"`
+	PacketsPerSecond  float64 `json:"packets_per_second"`
+	RateLimitedCount  int64   `json:"rate_limited_count"`
+	MemoryUsageMB     float64 `json:"memory_usage_mb"`
+	DatabaseStatus    string  `json:"database_status"`
+	Timestamp         string  `json:"timestamp"`
+}
+
 // Relay is the main relay orchestrator
 type Relay struct {
 	store     storage.Store
 	clients   map[*protocol.Client]bool
 	clientsMu sync.RWMutex
 	version   string
+	metrics   *Metrics
+	mux       *http.ServeMux
 }
 
 // New creates a new relay instance
 func New(store storage.Store) *Relay {
-	return &Relay{
+	r := &Relay{
 		store:   store,
 		clients: make(map[*protocol.Client]bool),
 		version: Version,
+		metrics: &Metrics{
+			startTime:       time.Now(),
+			dbStatus:        "unknown",
+			lastPacketReset: time.Now(),
+		},
+		mux: http.NewServeMux(),
 	}
+
+	// Setup HTTP routes
+	r.setupRoutes()
+
+	return r
+}
+
+// setupRoutes configures HTTP routes for the relay
+func (r *Relay) setupRoutes() {
+	r.mux.HandleFunc("/", r.ServeHTTP)
+	r.mux.HandleFunc("/health", r.HealthHandler)
 }
 
 // ServeHTTP handles WebSocket upgrade requests
@@ -79,6 +132,13 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	client := protocol.NewClient(conn, r)
 
+	// Update metrics
+	r.metrics.mu.Lock()
+	r.metrics.totalConnections++
+	r.metrics.lastPacketTime = time.Now()
+	r.metrics.packetCount++
+	r.metrics.mu.Unlock()
+
 	r.clientsMu.Lock()
 	r.clients[client] = true
 	r.clientsMu.Unlock()
@@ -93,8 +153,96 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	client.Start(req.Context())
 }
 
+// HealthHandler handles health check requests
+func (r *Relay) HealthHandler(w http.ResponseWriter, req *http.Request) {
+	r.metrics.mu.RLock()
+	defer r.metrics.mu.RUnlock()
+
+	// Update metrics
+	r.updateMetrics()
+
+	// Get current memory usage
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	memoryUsageMB := float64(m.Alloc) / 1024 / 1024
+
+	// Get active connections count
+	r.clientsMu.RLock()
+	activeConnections := len(r.clients)
+	r.clientsMu.RUnlock()
+
+	// Determine health status
+	status := "healthy"
+	if r.metrics.dbStatus != "ok" {
+		status = "unhealthy"
+	}
+
+	// Create response
+	response := HealthResponse{
+		Status:            status,
+		UptimeSeconds:     time.Since(r.metrics.startTime).Seconds(),
+		Version:           r.version,
+		ActiveConnections: activeConnections,
+		TotalConnections:  r.metrics.totalConnections,
+		TotalEvents:       r.metrics.totalEvents,
+		TotalRequests:     r.metrics.totalRequests,
+		PacketsPerSecond:  r.metrics.packetsPerSecond,
+		RateLimitedCount:  r.metrics.rateLimitedCount,
+		MemoryUsageMB:     memoryUsageMB,
+		DatabaseStatus:    r.metrics.dbStatus,
+		Timestamp:         time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// Set headers and send response
+	w.Header().Set("Content-Type", "application/json")
+	if status == "healthy" {
+		w.WriteHeader(http.StatusOK)
+	} else {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+
+	json.NewEncoder(w).Encode(response)
+}
+
+// updateMetrics updates dynamic metrics like packets per second
+func (r *Relay) updateMetrics() {
+	now := time.Now()
+
+	// Calculate packets per second for the last minute
+	if now.Sub(r.metrics.lastPacketReset) >= time.Minute {
+		r.metrics.packetsPerSecond = float64(r.metrics.packetCount) / now.Sub(r.metrics.lastPacketReset).Seconds()
+		r.metrics.packetCount = 0
+		r.metrics.lastPacketReset = now
+	} else if r.metrics.packetCount > 0 {
+		r.metrics.packetsPerSecond = float64(r.metrics.packetCount) / now.Sub(r.metrics.lastPacketReset).Seconds()
+	}
+
+	// Check database status
+	if r.store != nil {
+		// Simple ping - try to query count of events
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := r.store.CountEvents(ctx, []*event.Filter{})
+		if err != nil {
+			r.metrics.dbStatus = "error: " + err.Error()
+		} else {
+			r.metrics.dbStatus = "ok"
+		}
+	} else {
+		r.metrics.dbStatus = "not_initialized"
+	}
+}
+
 // HandleEvent processes an EVENT message from a client
 func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.Event) error {
+	// Update metrics
+	r.metrics.mu.Lock()
+	r.metrics.totalEvents++
+	r.metrics.packetCount++
+	r.metrics.lastPacketTime = time.Now()
+	r.metrics.mu.Unlock()
+
 	// NIP-42: Handle AUTH events
 	if nip42.IsAuthEvent(evt) {
 		if err := nip42.ValidateAuthEvent(evt); err != nil {
@@ -214,6 +362,13 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 
 // HandleReq processes a REQ message from a client
 func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string, filters []*event.Filter) error {
+	// Update metrics
+	r.metrics.mu.Lock()
+	r.metrics.totalRequests++
+	r.metrics.packetCount++
+	r.metrics.lastPacketTime = time.Now()
+	r.metrics.mu.Unlock()
+
 	var events []*event.Event
 	var err error
 
@@ -347,23 +502,21 @@ func (r *Relay) Close() error {
 
 // Start starts the relay HTTP server
 func (r *Relay) Start(addr string) error {
-	http.Handle("/", r)
 	log.Printf("Relay starting on %s", addr)
-	return http.ListenAndServe(addr, nil)
+	log.Printf("Health endpoint available at http://%s/health", addr)
+	return http.ListenAndServe(addr, r.mux)
 }
 
 // StartTLS starts the relay HTTPS server with TLS certificates
 func (r *Relay) StartTLS(addr, certFile, keyFile string) error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", r.ServeHTTP)
-
 	log.Printf("Relay starting with TLS on %s", addr)
 	log.Printf("Certificate file: %s", certFile)
 	log.Printf("Private key file: %s", keyFile)
+	log.Printf("Health endpoint available at https://%s/health", addr)
 
 	server := &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: r.mux,
 	}
 
 	return server.ListenAndServeTLS(certFile, keyFile)
