@@ -31,7 +31,7 @@ import (
 )
 
 // Version of the relay
-const Version = "0.16.0"
+const Version = "0.16.1"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -120,6 +120,14 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 		w.Header().Set("Content-Type", "application/nostr+json")
 		json.NewEncoder(w).Encode(info)
+		return
+	}
+
+	// Check if this comes from a proxy that terminated WebSocket connection
+	if req.Header.Get("X-Forwarded-Proto") == "wss" || req.Header.Get("X-Forwarded-Proto") == "ws" {
+		log.Printf("WebSocket termination detected from proxy - configure proxy for WebSocket passthrough")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("Proxy configured for WebSocket termination. Configure proxy for WebSocket passthrough to handle WebSocket connections properly."))
 		return
 	}
 
