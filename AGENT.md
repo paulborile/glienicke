@@ -291,7 +291,3 @@ For example: `bd create --help` shows `--parent`, `--deps`, `--assignee`, etc.
 - ❌ Do NOT duplicate tracking systems
 - ❌ Do NOT clutter repo root with planning documents
 
-For more details, see README.md and QUICKSTART.md.
-
-## Landing the Plane (Session Completion)
-

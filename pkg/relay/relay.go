@@ -126,7 +126,6 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	conn, err := upgrader.Upgrade(w, req, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
-		http.Error(w, "WebSocket upgrade failed", http.StatusInternalServerError)
 		return
 	}
 
