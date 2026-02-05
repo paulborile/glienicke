@@ -31,7 +31,7 @@ import (
 )
 
 // Version of the relay
-const Version = "0.16.1"
+const Version = "0.16.2"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -116,6 +116,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Software:      "https://github.com/paul/glienicke",
 			Version:       r.version,
 			SupportedNIPs: []int{1, 2, 4, 9, 11, 17, 22, 25, 40, 42, 44, 45, 50, 59, 62, 65},
+			Icon:          "https://www.paulstephenborile.com/wp-content/uploads/2026/02/cropped-logo-only.png",
 		}
 
 		w.Header().Set("Content-Type", "application/nostr+json")

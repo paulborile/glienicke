@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.2 2026 Feb 2nd
+
+Added Icon to nip11 information
+
+## 0.16.1 2026 Feb 2nd
+
+Changes for using traefik in front of glienicke-relay
+
 ## 0.16.0 - 2026-01-16
 
 ### Added Health Monitoring Endpoint
