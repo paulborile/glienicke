@@ -112,7 +112,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Header.Get("Accept") == "application/nostr+json" {
 		info := &nip11.RelayInformationDocument{
 			Name:          "Glienicke Nostr Relay",
-			Description:   "A Nostr relay written in Go",
+			Description:   "Glienicke - a Nostr relay written in Go",
 			Software:      "https://github.com/paul/glienicke",
 			Version:       r.version,
 			SupportedNIPs: []int{1, 2, 4, 9, 11, 17, 22, 25, 40, 42, 44, 45, 50, 59, 62, 65},
