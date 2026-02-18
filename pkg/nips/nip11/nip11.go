@@ -11,6 +11,7 @@ type RelayInformationDocument struct {
 	SupportedNIPs []int  `json:"supported_nips,omitempty"`
 	Software      string `json:"software,omitempty"`
 	Version       string `json:"version,omitempty"`
+	Icon          string `json:"icon,omitempty"`
 }
 
 // ToJSON returns the JSON encoding of the document.
