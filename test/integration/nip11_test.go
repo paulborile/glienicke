@@ -38,7 +38,7 @@ func TestNIP11_RelayInformationDocument(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.Equal(t, "Glienicke Nostr Relay", infoDoc["name"])
-	assert.Equal(t, "A Nostr relay written in Go", infoDoc["description"])
+	assert.Equal(t, "Glienicke - a Nostr relay written in Go", infoDoc["description"])
 	assert.Equal(t, "https://github.com/paul/glienicke", infoDoc["software"])
 	assert.Equal(t, relay.Version, infoDoc["version"])
 

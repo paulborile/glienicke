@@ -1,5 +1,78 @@
 # Changelog
 
+## 0.18.0 - 2026-02-20
+
+### Added NIP-28 Public Chat Support
+
+*   **NIP-28 Validation Package (`pkg/nips/nip28`):**
+    *   New package for NIP-28 Public Chat validation.
+    *   Support for kinds 40-44 (Channel Create, Metadata, Message, Hide, Mute).
+    *   Validation functions for each event kind.
+    *   `ParseChannelMetadata()` for extracting channel info.
+    *   Helper functions: `IsNIP28Event()`, `IsReplaceableKind()`.
+
+*   **Database Storage (`internal/store/sqlite`):**
+    *   New `channel_events` table for storing channel events.
+    *   New methods: `SaveChannelEvent()`, `GetChannelEvent()`, `QueryChannelEvents()`, `GetChannelMetadata()`, `ListChannels()`.
+    *   Optimized indexes for channel queries.
+
+*   **Database Migrations:**
+    *   Added migration system for safe schema upgrades.
+    *   `schema_migrations` table tracks applied versions.
+    *   Automatic migration on startup preserves existing data.
+    *   Tested for idempotency and old DB upgrades.
+
+## 0.17.0 - 2026-02-18
+
+### Added Central Configuration System
+
+*   **Configuration Package (`pkg/config`):**
+    *   New `pkg/config` package for centralized relay configuration.
+    *   YAML/JSON configuration file support.
+    *   Environment variable overrides (`GLIENICKE_*` prefix).
+    *   Backward-compatible CLI flags (`-addr`, `-db`, `-cert`, `-key`).
+
+*   **Configuration Sections:**
+    *   **Network:** Address, TLS certificate/key, read/write timeouts.
+    *   **Database:** Path, connection pool settings (max open/idle connections, lifetime).
+    *   **Rate Limit:** Enable/disable, events/sec, REQ/sec, max connections, max event size.
+    *   **Logging:** Log level (debug/info/warn/error) and format (text/json).
+    *   **Features:** Feature flags for NIP-11, NIP-42, NIP-28.
+
+*   **Validation:**
+    *   Configuration validation on startup.
+    *   TLS certificate/key pair validation.
+    *   Required field checks.
+
+*   **Example Configuration:**
+    *   Added `config/relay.yaml.example` with all available options.
+
+### Added Database Performance Optimizations
+
+*   **SQLite Options (`internal/store/sqlite`):**
+    *   New `Options` struct for database configuration.
+    *   `NewWithOptions()` for custom database settings.
+
+*   **Connection Pool:**
+    *   Configurable `MaxOpenConns`, `MaxIdleConns`, `ConnMaxLifetime`.
+    *   Uses config package settings.
+
+*   **Performance Pragmas:**
+    *   **WAL Mode:** Write-Ahead Logging for better concurrency (enabled by default).
+    *   **Cache Size:** Default 2MB cache.
+    *   **Busy Timeout:** Default 5 seconds.
+    *   **Synchronous Mode:** NORMAL for balanced safety/performance.
+    *   **Temp Store:** MEMORY for better performance.
+
+*   **Batch Operations:**
+    *   New `SaveEvents()` for bulk inserts using transactions.
+
+*   **Maintenance:**
+    *   `DeleteEventsOlderThan()` for event retention policies.
+    *   `PruneDeletedEvents()` to clean up deleted_events table.
+    *   `Vacuum()` to reclaim database space.
+    *   `GetStats()` for monitoring (event count, size, etc.).
+
 ## 0.16.2 2026 Feb 2nd
 
 Added Icon to nip11 information

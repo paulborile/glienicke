@@ -1,0 +1,57 @@
+# Glienicke Nostr Relay Configuration
+# Copy this to relay.yaml and modify as needed
+
+network:
+  # Address to listen on (use :8080 for all interfaces)
+  address: ":8080"
+  # TLS certificate file for WSS (leave empty for plain HTTP/WS)
+  tls_cert: ""
+  # TLS private key file for WSS
+  tls_key: ""
+  # HTTP read timeout in seconds
+  read_timeout: 30
+  # HTTP write timeout in seconds
+  write_timeout: 30
+
+database:
+  # Path to SQLite database
+  path: "relay.db"
+  # Maximum number of open connections
+  max_open_conns: 25
+  # Maximum number of idle connections
+  max_idle_conns: 5
+  # Connection max lifetime in seconds
+  conn_max_lifetime: 300
+
+rate_limit:
+  # Enable rate limiting
+  enabled: true
+  # Maximum events per second per IP
+  events_per_sec: 10
+  # Maximum REQ messages per second per IP
+  req_per_sec: 10
+  # Maximum concurrent connections per IP
+  max_connections: 100
+  # Maximum event size in bytes
+  max_event_size: 65536
+
+logging:
+  # Log level: debug, info, warn, error
+  level: "info"
+  # Log format: text, json
+  format: "text"
+
+features:
+  # Enable NIP-11 relay info
+  nip11: true
+  # Enable NIP-42 authentication
+  nip42: true
+  # Enable NIP-28 public chat
+  nip28: false
+
+# Environment variables can override these settings:
+# GLIENICKE_ADDRESS, GLIENICKE_TLS_CERT, GLIENICKE_TLS_KEY
+# GLIENICKE_DB_PATH
+# GLIENICKE_LOG_LEVEL, GLIENICKE_LOG_FORMAT
+# GLIENICKE_RATE_LIMIT_ENABLED, GLIENICKE_RATE_LIMIT_*
+# GLIENICKE_FEATURE_NIP11, GLIENICKE_FEATURE_NIP42, GLIENICKE_FEATURE_NIP28

@@ -13,6 +13,47 @@ import (
 	"github.com/paul/glienicke/pkg/storage"
 )
 
+// Options holds database configuration options
+type Options struct {
+	// MaxOpenConns is the maximum number of open connections to the database.
+	// If MaxOpenConns is 0 or negative, there is no limit.
+	MaxOpenConns int
+
+	// MaxIdleConns is the maximum number of idle connections to the database.
+	// If MaxIdleConns is negative, no idle connections are retained.
+	MaxIdleConns int
+
+	// ConnMaxLifetime sets the maximum duration of time that a database
+	// connection may be reused.
+	// If ConnMaxLifetime is 0, connections are reused forever.
+	ConnMaxLifetime time.Duration
+
+	// EnableWAL enables Write-Ahead Logging mode for better concurrency.
+	// Recommended for production use.
+	EnableWAL bool
+
+	// CacheSize sets the database cache size in pages.
+	// Negative values mean the default size (usually 2000).
+	// Value is in KB (e.g., -2000 = 2MB cache).
+	CacheSize int
+
+	// BusyTimeout sets the busy timeout in milliseconds.
+	// Default is 5000ms (5 seconds).
+	BusyTimeout time.Duration
+}
+
+// DefaultOptions returns default database options
+func DefaultOptions() *Options {
+	return &Options{
+		MaxOpenConns:    25,
+		MaxIdleConns:    5,
+		ConnMaxLifetime: 5 * time.Minute,
+		EnableWAL:       true,
+		CacheSize:       -2000, // 2MB cache
+		BusyTimeout:     5 * time.Second,
+	}
+}
+
 // Store is a SQLite implementation of storage.Store
 type Store struct {
 	db *sql.DB
@@ -23,12 +64,39 @@ var _ storage.Store = (*Store)(nil)
 
 // New creates a new SQLite store with autoconfiguration
 func New(dbPath string) (*Store, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+	return NewWithOptions(dbPath, DefaultOptions())
+}
+
+// NewWithOptions creates a new SQLite store with custom options
+func NewWithOptions(dbPath string, opts *Options) (*Store, error) {
+	if opts == nil {
+		opts = DefaultOptions()
+	}
+
+	dsn := buildDSN(dbPath)
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
 	store := &Store{db: db}
+
+	// Apply performance settings
+	if err := store.configurePerformance(opts); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to configure performance: %w", err)
+	}
+
+	// Configure connection pool
+	if opts.MaxOpenConns > 0 {
+		db.SetMaxOpenConns(opts.MaxOpenConns)
+	}
+	if opts.MaxIdleConns >= 0 {
+		db.SetMaxIdleConns(opts.MaxIdleConns)
+	}
+	if opts.ConnMaxLifetime > 0 {
+		db.SetConnMaxLifetime(opts.ConnMaxLifetime)
+	}
 
 	// Initialize schema
 	if err := store.initSchema(); err != nil {
@@ -39,33 +107,158 @@ func New(dbPath string) (*Store, error) {
 	return store, nil
 }
 
+// buildDSN builds the SQLite DSN with appropriate settings
+func buildDSN(dbPath string) string {
+	return dbPath
+}
+
+// configurePerformance applies performance optimizations
+func (s *Store) configurePerformance(opts *Options) error {
+	// Enable WAL mode for better concurrency (recommended for production)
+	if opts.EnableWAL {
+		if _, err := s.db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+			return fmt.Errorf("failed to enable WAL mode: %w", err)
+		}
+	}
+
+	// Set cache size (negative value = KB)
+	if opts.CacheSize != 0 {
+		if _, err := s.db.Exec(fmt.Sprintf("PRAGMA cache_size=%d;", opts.CacheSize)); err != nil {
+			return fmt.Errorf("failed to set cache size: %w", err)
+		}
+	}
+
+	// Set busy timeout
+	if opts.BusyTimeout > 0 {
+		timeoutMs := int(opts.BusyTimeout.Milliseconds())
+		if _, err := s.db.Exec(fmt.Sprintf("PRAGMA busy_timeout=%d;", timeoutMs)); err != nil {
+			return fmt.Errorf("failed to set busy timeout: %w", err)
+		}
+	}
+
+	// Enable foreign keys
+	if _, err := s.db.Exec("PRAGMA foreign_keys=ON;"); err != nil {
+		return fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+
+	// Synchronous mode: NORMAL is good balance of safety and performance
+	// For maximum performance in non-critical apps, can use OFF
+	// For maximum safety, use FULL
+	if _, err := s.db.Exec("PRAGMA synchronous=NORMAL;"); err != nil {
+		return fmt.Errorf("failed to set synchronous mode: %w", err)
+	}
+
+	// Temp store: MEMORY for better performance
+	if _, err := s.db.Exec("PRAGMA temp_store=MEMORY;"); err != nil {
+		return fmt.Errorf("failed to set temp store: %w", err)
+	}
+
+	return nil
+}
+
 // initSchema creates the necessary tables if they don't exist
 func (s *Store) initSchema() error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS events (
-		id TEXT PRIMARY KEY,
-		pubkey TEXT NOT NULL,
-		created_at INTEGER NOT NULL,
-		kind INTEGER NOT NULL,
-		tags TEXT, -- JSON array
-		content TEXT NOT NULL,
-		sig TEXT NOT NULL
-	);
+	// Create migrations table if not exists
+	_, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version INTEGER PRIMARY KEY,
+			applied_at INTEGER NOT NULL
+		);
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create migrations table: %w", err)
+	}
 
-	CREATE TABLE IF NOT EXISTS deleted_events (
-		id TEXT PRIMARY KEY,
-		deleter_pubkey TEXT NOT NULL,
-		deleted_at INTEGER NOT NULL
-	);
+	// Run migrations
+	if err := s.runMigrations(); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
 
-	CREATE INDEX IF NOT EXISTS idx_events_pubkey ON events(pubkey);
-	CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind);
-	CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
-	CREATE INDEX IF NOT EXISTS idx_events_kind_created_at ON events(kind, created_at);
-	`
+	return nil
+}
 
-	_, err := s.db.Exec(schema)
-	return err
+type migration struct {
+	version int
+	sql     string
+}
+
+var migrations = []migration{
+	{
+		version: 1,
+		sql: `
+		CREATE TABLE IF NOT EXISTS events (
+			id TEXT PRIMARY KEY,
+			pubkey TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			kind INTEGER NOT NULL,
+			tags TEXT,
+			content TEXT NOT NULL,
+			sig TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_events_pubkey ON events(pubkey);
+		CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind);
+		CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
+		CREATE INDEX IF NOT EXISTS idx_events_kind_created_at ON events(kind, created_at);
+		`,
+	},
+	{
+		version: 2,
+		sql: `
+		CREATE TABLE IF NOT EXISTS deleted_events (
+			id TEXT PRIMARY KEY,
+			deleter_pubkey TEXT NOT NULL,
+			deleted_at INTEGER NOT NULL
+		);
+		`,
+	},
+	{
+		version: 3,
+		sql: `
+		CREATE TABLE IF NOT EXISTS channel_events (
+			id TEXT PRIMARY KEY,
+			channel_id TEXT NOT NULL,
+			pubkey TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			kind INTEGER NOT NULL,
+			tags TEXT,
+			content TEXT NOT NULL,
+			sig TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_channel_events_channel_id ON channel_events(channel_id);
+		CREATE INDEX IF NOT EXISTS idx_channel_events_kind ON channel_events(kind);
+		CREATE INDEX IF NOT EXISTS idx_channel_events_created_at ON channel_events(created_at);
+		CREATE INDEX IF NOT EXISTS idx_channel_events_channel_created ON channel_events(channel_id, created_at);
+		`,
+	},
+}
+
+func (s *Store) runMigrations() error {
+	for _, m := range migrations {
+		// Check if already applied
+		var count int
+		err := s.db.QueryRow("SELECT COUNT(*) FROM schema_migrations WHERE version = ?", m.version).Scan(&count)
+		if err != nil {
+			return fmt.Errorf("failed to check migration %d: %w", m.version, err)
+		}
+
+		if count > 0 {
+			continue // Already applied
+		}
+
+		// Apply migration
+		_, err = s.db.Exec(m.sql)
+		if err != nil {
+			return fmt.Errorf("failed to apply migration %d: %w", m.version, err)
+		}
+
+		// Record migration
+		_, err = s.db.Exec("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", m.version, time.Now().Unix())
+		if err != nil {
+			return fmt.Errorf("failed to record migration %d: %w", m.version, err)
+		}
+	}
+
+	return nil
 }
 
 // SaveEvent stores an event in SQLite
@@ -107,6 +300,67 @@ func (s *Store) SaveEvent(ctx context.Context, evt *event.Event) error {
 	_, err = s.db.ExecContext(ctx, query, evt.ID, evt.PubKey, evt.CreatedAt, evt.Kind, tagsJSON, evt.Content, evt.Sig)
 	if err != nil {
 		return fmt.Errorf("failed to save event: %w", err)
+	}
+
+	return nil
+}
+
+// SaveEvents stores multiple events in a batch using a transaction
+func (s *Store) SaveEvents(ctx context.Context, events []*event.Event) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT OR REPLACE INTO events (id, pubkey, created_at, kind, tags, content, sig)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, evt := range events {
+		// Check if event is deleted
+		var deleted bool
+		err := tx.QueryRowContext(ctx, "SELECT 1 FROM deleted_events WHERE id = ?", evt.ID).Scan(&deleted)
+		if err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("failed to check deletion status: %w", err)
+		}
+		if deleted {
+			continue // Skip deleted events
+		}
+
+		tagsJSON := "[]"
+		if len(evt.Tags) > 0 {
+			var tagStrings []string
+			for _, tag := range evt.Tags {
+				tagStr := "["
+				for i, part := range tag {
+					if i > 0 {
+						tagStr += ","
+					}
+					tagStr += `"` + strings.ReplaceAll(part, `"`, `\"`) + `"`
+				}
+				tagStr += "]"
+				tagStrings = append(tagStrings, tagStr)
+			}
+			tagsJSON = "[" + strings.Join(tagStrings, ",") + "]"
+		}
+
+		if _, err := stmt.ExecContext(ctx, evt.ID, evt.PubKey, evt.CreatedAt, evt.Kind, tagsJSON, evt.Content, evt.Sig); err != nil {
+			return fmt.Errorf("failed to save event %s: %w", evt.ID, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
@@ -525,4 +779,246 @@ func (s *Store) countFilter(ctx context.Context, filter *event.Filter, seen map[
 	}
 
 	return count, nil
+}
+
+// DeleteEventsOlderThan deletes all events older than the specified duration
+// This is useful for implementing event retention policies
+func (s *Store) DeleteEventsOlderThan(ctx context.Context, age time.Duration) (int64, error) {
+	cutoffTime := time.Now().Add(-age).Unix()
+
+	result, err := s.db.ExecContext(ctx, "DELETE FROM events WHERE created_at < ?", cutoffTime)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete old events: %w", err)
+	}
+
+	return result.RowsAffected()
+}
+
+// PruneDeletedEvents removes old entries from the deleted_events table
+// This helps keep the database size manageable
+func (s *Store) PruneDeletedEvents(ctx context.Context, age time.Duration) (int64, error) {
+	cutoffTime := time.Now().Add(-age).Unix()
+
+	result, err := s.db.ExecContext(ctx, "DELETE FROM deleted_events WHERE deleted_at < ?", cutoffTime)
+	if err != nil {
+		return 0, fmt.Errorf("failed to prune deleted events: %w", err)
+	}
+
+	return result.RowsAffected()
+}
+
+// Vacuum runs the SQLite VACUUM command to reclaim unused space
+// This should be run during low-traffic periods
+func (s *Store) Vacuum(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, "VACUUM")
+	if err != nil {
+		return fmt.Errorf("failed to vacuum database: %w", err)
+	}
+	return nil
+}
+
+// Stats returns database statistics for monitoring
+type Stats struct {
+	EventCount        int64
+	DeletedEventCount int64
+	DatabaseSizeKB    int64
+}
+
+// GetStats returns database statistics
+func (s *Store) GetStats(ctx context.Context) (*Stats, error) {
+	stats := &Stats{}
+
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM events").Scan(&stats.EventCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count events: %w", err)
+	}
+
+	err = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM deleted_events").Scan(&stats.DeletedEventCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count deleted events: %w", err)
+	}
+
+	// Get database file size (approximate)
+	var pageCount int64
+	var pageSize int64
+	err = s.db.QueryRowContext(ctx, "PRAGMA page_count").Scan(&pageCount)
+	if err == nil {
+		err = s.db.QueryRowContext(ctx, "PRAGMA page_size").Scan(&pageSize)
+		if err == nil {
+			stats.DatabaseSizeKB = (pageCount * pageSize) / 1024
+		}
+	}
+
+	return stats, nil
+}
+
+func tagsToJSON(tags [][]string) string {
+	if len(tags) == 0 {
+		return "[]"
+	}
+	var tagStrings []string
+	for _, tag := range tags {
+		tagStr := "["
+		for i, part := range tag {
+			if i > 0 {
+				tagStr += ","
+			}
+			tagStr += `"` + strings.ReplaceAll(part, `"`, `\"`) + `"`
+		}
+		tagStr += "]"
+		tagStrings = append(tagStrings, tagStr)
+	}
+	return "[" + strings.Join(tagStrings, ",") + "]"
+}
+
+func jsonToTags(jsonStr string) [][]string {
+	if jsonStr == "" || jsonStr == "[]" {
+		return [][]string{}
+	}
+	return parseTagsJSON(jsonStr)
+}
+
+func (s *Store) SaveChannelEvent(ctx context.Context, evt *event.Event) error {
+	tagsJSON := tagsToJSON(evt.Tags)
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT OR REPLACE INTO channel_events (id, channel_id, pubkey, created_at, kind, tags, content, sig)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, evt.ID, getChannelID(evt), evt.PubKey, evt.CreatedAt, evt.Kind, tagsJSON, evt.Content, evt.Sig)
+	if err != nil {
+		return fmt.Errorf("failed to save channel event: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) GetChannelEvent(ctx context.Context, eventID string) (*event.Event, error) {
+	var evt event.Event
+	var tagsJSON string
+	var channelID string
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, channel_id, pubkey, created_at, kind, tags, content, sig
+		FROM channel_events WHERE id = ?
+	`, eventID).Scan(&evt.ID, &channelID, &evt.PubKey, &evt.CreatedAt, &evt.Kind, &tagsJSON, &evt.Content, &evt.Sig)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, storage.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get channel event: %w", err)
+	}
+
+	evt.Tags = jsonToTags(tagsJSON)
+	return &evt, nil
+}
+
+func (s *Store) QueryChannelEvents(ctx context.Context, channelID string, since, until *int64, limit *int) ([]*event.Event, error) {
+	query := "SELECT id, channel_id, pubkey, created_at, kind, tags, content, sig FROM channel_events WHERE channel_id = ?"
+	args := []interface{}{channelID}
+
+	if since != nil {
+		query += " AND created_at >= ?"
+		args = append(args, *since)
+	}
+	if until != nil {
+		query += " AND created_at <= ?"
+		args = append(args, *until)
+	}
+
+	query += " ORDER BY created_at DESC"
+
+	if limit != nil && *limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", *limit)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query channel events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []*event.Event
+	for rows.Next() {
+		var evt event.Event
+		var tagsJSON string
+		var channelID string
+
+		if err := rows.Scan(&evt.ID, &channelID, &evt.PubKey, &evt.CreatedAt, &evt.Kind, &tagsJSON, &evt.Content, &evt.Sig); err != nil {
+			return nil, fmt.Errorf("failed to scan channel event: %w", err)
+		}
+
+		evt.Tags = jsonToTags(tagsJSON)
+		events = append(events, &evt)
+	}
+
+	return events, rows.Err()
+}
+
+func (s *Store) GetChannelMetadata(ctx context.Context, channelID string) (*event.Event, error) {
+	var evt event.Event
+	var tagsJSON string
+	var storedChannelID string
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, channel_id, pubkey, created_at, kind, tags, content, sig
+		FROM channel_events
+		WHERE channel_id = ? AND kind IN (40, 41)
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, channelID).Scan(&evt.ID, &storedChannelID, &evt.PubKey, &evt.CreatedAt, &evt.Kind, &tagsJSON, &evt.Content, &evt.Sig)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, storage.ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get channel metadata: %w", err)
+	}
+
+	evt.Tags = jsonToTags(tagsJSON)
+	return &evt, nil
+}
+
+func (s *Store) ListChannels(ctx context.Context, limit int) ([]*event.Event, error) {
+	query := `
+		SELECT id, channel_id, pubkey, created_at, kind, tags, content, sig
+		FROM channel_events
+		WHERE kind IN (40, 41)
+		GROUP BY channel_id
+		HAVING created_at = MAX(created_at)
+		ORDER BY created_at DESC
+	`
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list channels: %w", err)
+	}
+	defer rows.Close()
+
+	var channels []*event.Event
+	for rows.Next() {
+		var evt event.Event
+		var tagsJSON string
+		var channelID string
+
+		if err := rows.Scan(&evt.ID, &channelID, &evt.PubKey, &evt.CreatedAt, &evt.Kind, &tagsJSON, &evt.Content, &evt.Sig); err != nil {
+			return nil, fmt.Errorf("failed to scan channel: %w", err)
+		}
+
+		evt.Tags = jsonToTags(tagsJSON)
+		channels = append(channels, &evt)
+	}
+
+	return channels, rows.Err()
+}
+
+func getChannelID(evt *event.Event) string {
+	for _, tag := range evt.Tags {
+		if len(tag) >= 2 && tag[0] == "channel_id" {
+			return tag[1]
+		}
+	}
+	return ""
 }
