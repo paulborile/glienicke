@@ -13,9 +13,10 @@ import (
 // Store is an in-memory implementation of storage.Store
 // This is intended for testing only - not for production use
 type Store struct {
-	mu      sync.RWMutex
-	events  map[string]*event.Event
-	deleted map[string]bool // event IDs that have been deleted
+	mu            sync.RWMutex
+	events        map[string]*event.Event
+	deleted       map[string]bool                    // event IDs that have been deleted
+	channelEvents map[string]map[string]*event.Event // channelID -> eventID -> event
 }
 
 // Ensure Store implements storage.Store
@@ -24,8 +25,9 @@ var _ storage.Store = (*Store)(nil)
 // New creates a new in-memory store
 func New() *Store {
 	return &Store{
-		events:  make(map[string]*event.Event),
-		deleted: make(map[string]bool),
+		events:        make(map[string]*event.Event),
+		deleted:       make(map[string]bool),
+		channelEvents: make(map[string]map[string]*event.Event),
 	}
 }
 
@@ -199,4 +201,166 @@ func (s *Store) Count() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.events) - len(s.deleted)
+}
+
+// SaveChannelEvent stores a channel event in memory
+func (s *Store) SaveChannelEvent(ctx context.Context, evt *event.Event) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	channelID := getChannelID(evt)
+	if channelID == "" {
+		return fmt.Errorf("missing channel_id")
+	}
+
+	if s.channelEvents[channelID] == nil {
+		s.channelEvents[channelID] = make(map[string]*event.Event)
+	}
+
+	s.channelEvents[channelID][evt.ID] = evt
+	return nil
+}
+
+// QueryChannelEvents retrieves channel events matching the criteria
+func (s *Store) QueryChannelEvents(ctx context.Context, channelID string, since, until *int64, limit *int) ([]*event.Event, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var results []*event.Event
+
+	channelEvts, ok := s.channelEvents[channelID]
+	if !ok {
+		return results, nil
+	}
+
+	for _, evt := range channelEvts {
+		// Apply time filters
+		if since != nil && evt.CreatedAt < *since {
+			continue
+		}
+		if until != nil && evt.CreatedAt > *until {
+			continue
+		}
+		results = append(results, evt)
+	}
+
+	// Sort by created_at descending
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].CreatedAt > results[j].CreatedAt
+	})
+
+	// Apply limit
+	if limit != nil && *limit > 0 && len(results) > *limit {
+		results = results[:*limit]
+	}
+
+	return results, nil
+}
+
+// GetChannelEvent retrieves a single channel event by ID
+func (s *Store) GetChannelEvent(ctx context.Context, eventID string) (*event.Event, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Search all channels
+	for _, channelEvts := range s.channelEvents {
+		if evt, ok := channelEvts[eventID]; ok {
+			return evt, nil
+		}
+	}
+
+	return nil, storage.ErrNotFound
+}
+
+// GetChannelMetadata retrieves the latest channel metadata event
+func (s *Store) GetChannelMetadata(ctx context.Context, channelID string) (*event.Event, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	channelEvts, ok := s.channelEvents[channelID]
+	if !ok {
+		return nil, storage.ErrNotFound
+	}
+
+	var latestMeta *event.Event
+	for _, evt := range channelEvts {
+		if evt.Kind == 40 || evt.Kind == 41 {
+			if latestMeta == nil || evt.CreatedAt > latestMeta.CreatedAt {
+				latestMeta = evt
+			}
+		}
+	}
+
+	if latestMeta == nil {
+		return nil, storage.ErrNotFound
+	}
+
+	return latestMeta, nil
+}
+
+// ListChannels lists all channels
+func (s *Store) ListChannels(ctx context.Context, limit int) ([]*event.Event, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	seen := make(map[string]bool)
+	var results []*event.Event
+
+	for channelID, channelEvts := range s.channelEvents {
+		if seen[channelID] {
+			continue
+		}
+
+		// Find latest metadata event for this channel
+		var latestMeta *event.Event
+		for _, evt := range channelEvts {
+			if evt.Kind == 40 || evt.Kind == 41 {
+				if latestMeta == nil || evt.CreatedAt > latestMeta.CreatedAt {
+					latestMeta = evt
+				}
+			}
+		}
+
+		if latestMeta != nil {
+			results = append(results, latestMeta)
+			seen[channelID] = true
+		}
+	}
+
+	// Sort by created_at descending
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].CreatedAt > results[j].CreatedAt
+	})
+
+	// Apply limit
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results, nil
+}
+
+// DeleteChannelEvents deletes all events for a specific channel
+func (s *Store) DeleteChannelEvents(ctx context.Context, channelID string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	channelEvts, ok := s.channelEvents[channelID]
+	if !ok {
+		return 0, nil
+	}
+
+	count := len(channelEvts)
+	delete(s.channelEvents, channelID)
+
+	return count, nil
+}
+
+func getChannelID(evt *event.Event) string {
+	for _, tag := range evt.Tags {
+		if len(tag) >= 2 && tag[0] == "channel_id" {
+			return tag[1]
+		}
+	}
+	return ""
 }

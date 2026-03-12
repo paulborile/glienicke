@@ -111,6 +111,10 @@ func (m *mockStore) CountEvents(ctx context.Context, filters []*event.Filter) (i
 	return 0, nil
 }
 
+func (m *mockStore) DeleteChannelEvents(ctx context.Context, channelID string) (int, error) {
+	return 0, nil
+}
+
 func (m *mockStore) Close() error {
 	return nil
 }

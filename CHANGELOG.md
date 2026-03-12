@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.19.1 - 2026-03-12
+
+### Fixed
+
+* **SQLite tag parser (`internal/store/sqlite`):** Fixed panic `slice bounds out of range [1:0]` in `parseTagString` when a tag part is a single `"` character. Added `len(part) >= 2` guard before unquoting.
+
+## 0.19.0 - 2026-02-23
+
+### Added NIP-28 Relay Integration and Channel Deletion
+
+*   **Relay Integration (`pkg/relay`):**
+    *   NIP-28 events now wired into event pipeline.
+    *   Channel events validated and stored in `channel_events` table.
+    *   Channel subscriptions supported via `#channel_id` filter in REQ messages.
+    *   Automatic broadcast to subscribers.
+
+*   **Memory Store Channel Support (`internal/store/memory`):**
+    *   Added in-memory channel event storage for testing.
+    *   Full support for `SaveChannelEvent()`, `QueryChannelEvents()`, `DeleteChannelEvents()`.
+
+*   **NIP-09 Channel Deletion:**
+    *   Deleting a channel creation event (kind 40) now cleans up ALL channel events.
+    *   Messages, metadata, hide, and mute events are cascade deleted.
+    *   Works with both SQLite and memory storage.
+
+*   **Integration Tests:**
+    *   `TestNIP28_ChannelLifecycle` - Full channel flow test.
+    *   `TestNIP28_Validation` - Input validation tests.
+    *   `TestNIP28_ChannelSubscription` - Multi-client broadcast test.
+    *   `TestNIP28_ChannelDeletion` - Channel deletion cleanup test.
+
 ## 0.18.0 - 2026-02-20
 
 ### Added NIP-28 Public Chat Support

@@ -573,7 +573,7 @@ func parseTagString(tagStr string) []string {
 	var result []string
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
-		if strings.HasPrefix(part, `"`) && strings.HasSuffix(part, `"`) {
+		if len(part) >= 2 && strings.HasPrefix(part, `"`) && strings.HasSuffix(part, `"`) {
 			part = part[1 : len(part)-1]
 			// Unescape quotes
 			part = strings.ReplaceAll(part, `\"`, `"`)
@@ -1012,6 +1012,21 @@ func (s *Store) ListChannels(ctx context.Context, limit int) ([]*event.Event, er
 	}
 
 	return channels, rows.Err()
+}
+
+// DeleteChannelEvents deletes all events for a specific channel
+func (s *Store) DeleteChannelEvents(ctx context.Context, channelID string) (int, error) {
+	result, err := s.db.ExecContext(ctx, "DELETE FROM channel_events WHERE channel_id = ?", channelID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete channel events: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return int(rowsAffected), nil
 }
 
 func getChannelID(evt *event.Event) string {

@@ -13,12 +13,15 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/paul/glienicke/internal/store/memory"
+	"github.com/paul/glienicke/internal/store/sqlite"
 	"github.com/paul/glienicke/pkg/event"
 	"github.com/paul/glienicke/pkg/nips/nip02"
 	"github.com/paul/glienicke/pkg/nips/nip09"
 	"github.com/paul/glienicke/pkg/nips/nip11"
 	"github.com/paul/glienicke/pkg/nips/nip22"
 	"github.com/paul/glienicke/pkg/nips/nip25"
+	"github.com/paul/glienicke/pkg/nips/nip28"
 	"github.com/paul/glienicke/pkg/nips/nip40"
 	"github.com/paul/glienicke/pkg/nips/nip42"
 	"github.com/paul/glienicke/pkg/nips/nip44"
@@ -30,8 +33,14 @@ import (
 	"github.com/paul/glienicke/pkg/storage"
 )
 
+// ChannelStore defines the interface for storing channel events
+type ChannelStore interface {
+	SaveChannelEvent(ctx context.Context, evt *event.Event) error
+	QueryChannelEvents(ctx context.Context, channelID string, since, until *int64, limit *int) ([]*event.Event, error)
+}
+
 // Version of the relay
-const Version = "0.18.0"
+const Version = "0.19.1"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -293,6 +302,14 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 		}
 	}
 
+	// NIP-28: Validate channel events
+	if nip28.IsNIP28Event(evt) {
+		if err := nip28.New().Process(evt, r.store); err != nil {
+			c.SendOK(evt.ID, false, fmt.Sprintf("invalid channel event: %v", err))
+			return fmt.Errorf("invalid channel event: %w", err)
+		}
+	}
+
 	// NIP-62: Validate Request to Vanish events
 	if nip62.IsRequestToVanishEvent(evt) {
 		if err := nip62.ValidateRequestToVanish(evt); err != nil {
@@ -359,6 +376,22 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 		return fmt.Errorf("failed to save event: %w", err)
 	}
 
+	// NIP-28: Save channel events to channel table
+	if nip28.IsNIP28Event(evt) {
+		var channelStore ChannelStore
+		if sqliteStore, ok := r.store.(*sqlite.Store); ok {
+			channelStore = sqliteStore
+		} else if memStore, ok := r.store.(*memory.Store); ok {
+			channelStore = memStore
+		}
+
+		if channelStore != nil {
+			if err := channelStore.SaveChannelEvent(ctx, evt); err != nil {
+				log.Printf("NIP-28: failed to save channel event: %v", err)
+			}
+		}
+	}
+
 	// Send OK message
 	c.SendOK(evt.ID, true, "")
 
@@ -380,16 +413,26 @@ func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string,
 	var events []*event.Event
 	var err error
 
-	// Check if any filter has search field (NIP-50)
-	hasSearch := false
-	for _, filter := range filters {
-		if filter.Search != "" {
-			hasSearch = true
-			break
-		}
-	}
+	// Check for channel_id in filters (NIP-28)
+	channelID, isChannelQuery := getChannelIDFromFilters(filters)
 
-	if hasSearch {
+	if isChannelQuery {
+		var channelStore ChannelStore
+		if sqliteStore, ok := r.store.(*sqlite.Store); ok {
+			channelStore = sqliteStore
+		} else if memStore, ok := r.store.(*memory.Store); ok {
+			channelStore = memStore
+		}
+
+		if channelStore == nil {
+			return fmt.Errorf("channel events require storage with channel support")
+		}
+		// NIP-28: Query channel events
+		events, err = r.queryChannelEvents(ctx, channelStore, channelID, filters)
+		if err != nil {
+			return fmt.Errorf("failed to query channel events: %w", err)
+		}
+	} else if hasSearchField(filters) {
 		// Use NIP-50 search
 		events, err = nip50.SearchEvents(ctx, r.store, filters)
 		if err != nil {
@@ -556,4 +599,66 @@ func convertLocalEventToNostrEvent(le *event.Event) *nostr.Event {
 	}
 
 	return nostrEvt
+}
+
+// getChannelIDFromFilters extracts channel_id from filters if present
+func getChannelIDFromFilters(filters []*event.Filter) (string, bool) {
+	for _, filter := range filters {
+		if channelIDs, ok := filter.Tags["channel_id"]; ok {
+			if len(channelIDs) > 0 && channelIDs[0] != "" {
+				return channelIDs[0], true
+			}
+		}
+	}
+	return "", false
+}
+
+// hasSearchField checks if any filter has a search field
+func hasSearchField(filters []*event.Filter) bool {
+	for _, filter := range filters {
+		if filter.Search != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// queryChannelEvents handles NIP-28 channel event queries
+func (r *Relay) queryChannelEvents(ctx context.Context, store ChannelStore, channelID string, filters []*event.Filter) ([]*event.Event, error) {
+	var since, until *int64
+	var limit *int
+
+	for _, filter := range filters {
+		if filter.Since != nil {
+			since = filter.Since
+		}
+		if filter.Until != nil {
+			until = filter.Until
+		}
+		if filter.Limit != nil {
+			limit = filter.Limit
+		}
+	}
+
+	// If kinds are specified, filter by them
+	if len(filters) > 0 && len(filters[0].Kinds) > 0 {
+		var allEvents []*event.Event
+		for _, kind := range filters[0].Kinds {
+			events, err := store.QueryChannelEvents(ctx, channelID, since, until, limit)
+			if err != nil {
+				return nil, err
+			}
+			// Filter by kind in memory
+			var kindEvents []*event.Event
+			for _, evt := range events {
+				if evt.Kind == kind {
+					kindEvents = append(kindEvents, evt)
+				}
+			}
+			allEvents = append(allEvents, kindEvents...)
+		}
+		return allEvents, nil
+	}
+
+	return store.QueryChannelEvents(ctx, channelID, since, until, limit)
 }
