@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -17,7 +18,13 @@ func main() {
 	dbPath := flag.String("db", "relay.db", "Path to SQLite database (will be created if it doesn't exist)")
 	certFile := flag.String("cert", "", "TLS certificate file for secure WebSocket (WSS)")
 	keyFile := flag.String("key", "", "TLS private key file for secure WebSocket (WSS)")
+	version := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *version {
+		fmt.Println(relay.Version)
+		os.Exit(0)
+	}
 
 	// Autoconfigure SQLite storage
 	expandedPath := expandPath(*dbPath)
