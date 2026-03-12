@@ -34,4 +34,8 @@ type Store interface {
 
 	// CountEvents returns the count of events matching the filters
 	CountEvents(ctx context.Context, filters []*event.Filter) (int, error)
+
+	// DeleteChannelEvents deletes all events for a specific channel (NIP-28)
+	// Returns the number of deleted events
+	DeleteChannelEvents(ctx context.Context, channelID string) (int, error)
 }
