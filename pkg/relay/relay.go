@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,7 +43,7 @@ type ChannelStore interface {
 }
 
 // Version of the relay
-const Version = "0.19.1"
+const Version = "0.19.3"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -80,22 +83,45 @@ type HealthResponse struct {
 	Timestamp         string  `json:"timestamp"`
 }
 
+// ipRateLimiter tracks per-IP REQ rate using a token bucket and ban state
+type ipRateLimiter struct {
+	tokens     float64
+	lastRefill time.Time
+	violations int
+	bannedAt   time.Time
+}
+
 // Relay is the main relay orchestrator
 type Relay struct {
-	store     storage.Store
-	clients   map[*protocol.Client]bool
-	clientsMu sync.RWMutex
-	version   string
-	metrics   *Metrics
-	mux       *http.ServeMux
+	store           storage.Store
+	clients         map[*protocol.Client]bool
+	clientsMu       sync.RWMutex
+	version         string
+	metrics         *Metrics
+	mux             *http.ServeMux
+	ipLimiters      map[string]*ipRateLimiter
+	ipLimiterMu     sync.Mutex
+	maxEventsPerREQ  int
+	rateLimitEnabled bool
+	requireAuth      bool // NIP-42: require authentication before allowing REQ/EVENT
 }
 
 // New creates a new relay instance
 func New(store storage.Store) *Relay {
+	// Rate limiting enabled by default; disable with GLIENICKE_RATE_LIMIT_ENABLED=false
+	rlEnabled := true
+	if v := os.Getenv("GLIENICKE_RATE_LIMIT_ENABLED"); v == "false" || v == "0" {
+		rlEnabled = false
+		log.Println("Rate limiting DISABLED via GLIENICKE_RATE_LIMIT_ENABLED")
+	}
+
 	r := &Relay{
-		store:   store,
-		clients: make(map[*protocol.Client]bool),
-		version: Version,
+		store:            store,
+		clients:          make(map[*protocol.Client]bool),
+		version:          Version,
+		ipLimiters:       make(map[string]*ipRateLimiter),
+		maxEventsPerREQ:  defaultMaxEventsPerREQ,
+		rateLimitEnabled: rlEnabled,
 		metrics: &Metrics{
 			startTime:       time.Now(),
 			dbStatus:        "unknown",
@@ -108,6 +134,16 @@ func New(store storage.Store) *Relay {
 	r.setupRoutes()
 
 	return r
+}
+
+// SetMaxEventsPerREQ sets the maximum number of events returned per REQ response.
+func (r *Relay) SetMaxEventsPerREQ(max int) {
+	r.maxEventsPerREQ = max
+}
+
+// SetRequireAuth enables NIP-42 authentication requirement.
+func (r *Relay) SetRequireAuth(enabled bool) {
+	r.requireAuth = enabled
 }
 
 // setupRoutes configures HTTP routes for the relay
@@ -133,11 +169,24 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Check if this comes from a proxy that terminated WebSocket connection
-	if req.Header.Get("X-Forwarded-Proto") == "wss" || req.Header.Get("X-Forwarded-Proto") == "ws" {
-		log.Printf("WebSocket termination detected from proxy - configure proxy for WebSocket passthrough")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("Proxy configured for WebSocket termination. Configure proxy for WebSocket passthrough to handle WebSocket connections properly."))
+	// Extract real client IP from proxy headers (before upgrade, so we can reject banned IPs)
+	realIP := req.Header.Get("X-Forwarded-For")
+	if realIP != "" {
+		// X-Forwarded-For can contain multiple IPs; first one is the original client
+		if idx := strings.Index(realIP, ","); idx != -1 {
+			realIP = strings.TrimSpace(realIP[:idx])
+		}
+	} else if realIP = req.Header.Get("X-Real-IP"); realIP == "" {
+		// No proxy headers — use the direct connection IP (strip port)
+		realIP = req.RemoteAddr
+		if host, _, err := net.SplitHostPort(realIP); err == nil {
+			realIP = host
+		}
+	}
+
+	// Reject banned IPs before WebSocket upgrade
+	if r.rateLimitEnabled && r.IsIPBanned(realIP) {
+		http.Error(w, "banned", http.StatusForbidden)
 		return
 	}
 
@@ -147,7 +196,15 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	client := protocol.NewClient(conn, r)
+	client := protocol.NewClient(conn, r, realIP)
+	log.Printf("New WebSocket connection from %s", client.RemoteAddr())
+	if r.rateLimitEnabled {
+		client.SetRateLimit(r.checkRate)
+	}
+	if r.requireAuth {
+		client.SetRequireAuth()
+		client.SendAuth()
+	}
 
 	// Update metrics
 	r.metrics.mu.Lock()
@@ -251,6 +308,88 @@ func (r *Relay) updateMetrics() {
 	}
 }
 
+const (
+	reqRatePerSec       = 10             // max sustained REQ rate per IP per second
+	reqBurstLimit       = 20             // max burst of REQs per IP
+	banViolationLimit   = 50             // number of rate limit violations before banning
+	banDuration         = 24 * time.Hour // how long an IP stays banned
+	defaultMaxEventsPerREQ = 100         // max events returned per REQ response
+)
+
+// isIPBanned checks if an IP is currently banned. Must be called with ipLimiterMu held.
+func (r *Relay) isIPBanned(ip string) bool {
+	lim, ok := r.ipLimiters[ip]
+	if !ok {
+		return false
+	}
+	if lim.bannedAt.IsZero() {
+		return false
+	}
+	if time.Since(lim.bannedAt) > banDuration {
+		// Ban expired — reset
+		lim.bannedAt = time.Time{}
+		lim.violations = 0
+		return false
+	}
+	return true
+}
+
+// IsIPBanned checks if an IP is currently banned (thread-safe, for use in ServeHTTP).
+func (r *Relay) IsIPBanned(ip string) bool {
+	r.ipLimiterMu.Lock()
+	defer r.ipLimiterMu.Unlock()
+	return r.isIPBanned(ip)
+}
+
+// checkRate implements per-IP rate limiting using a shared token bucket.
+// Returns empty string if allowed, or a reason string if rejected.
+func (r *Relay) checkRate(clientIP string) string {
+	r.ipLimiterMu.Lock()
+	defer r.ipLimiterMu.Unlock()
+
+	// Check ban first
+	if r.isIPBanned(clientIP) {
+		return "banned: too many rate limit violations"
+	}
+
+	lim, ok := r.ipLimiters[clientIP]
+	if !ok {
+		lim = &ipRateLimiter{
+			tokens:     reqBurstLimit,
+			lastRefill: time.Now(),
+		}
+		r.ipLimiters[clientIP] = lim
+	}
+
+	// Refill tokens
+	now := time.Now()
+	elapsed := now.Sub(lim.lastRefill).Seconds()
+	lim.tokens += elapsed * reqRatePerSec
+	if lim.tokens > reqBurstLimit {
+		lim.tokens = reqBurstLimit
+	}
+	lim.lastRefill = now
+
+	if lim.tokens < 1 {
+		lim.violations++
+		r.metrics.mu.Lock()
+		r.metrics.rateLimitedCount++
+		r.metrics.mu.Unlock()
+
+		if lim.violations >= banViolationLimit {
+			lim.bannedAt = now
+			log.Printf("BANNED IP %s for %v after %d rate limit violations", clientIP, banDuration, lim.violations)
+			return "banned: too many rate limit violations"
+		}
+
+		log.Printf("Rate limited %s (violations %d/%d)", clientIP, lim.violations, banViolationLimit)
+		return "rate-limited: too many messages, slow down"
+	}
+
+	lim.tokens--
+	return ""
+}
+
 // HandleEvent processes an EVENT message from a client
 func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.Event) error {
 	// Update metrics
@@ -266,7 +405,20 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 			c.SendOK(evt.ID, false, fmt.Sprintf("invalid AUTH: %v", err))
 			return fmt.Errorf("invalid AUTH event: %w", err)
 		}
+		// Verify challenge matches what we sent
+		if c.AuthChallenge() != "" && evt.Content != c.AuthChallenge() {
+			c.SendOK(evt.ID, false, "invalid: challenge mismatch")
+			return fmt.Errorf("AUTH challenge mismatch")
+		}
+		c.Authenticate(evt.PubKey)
 		c.SendOK(evt.ID, true, "authenticated")
+		log.Printf("Client %s authenticated as %s", c.RemoteAddr(), evt.PubKey)
+		return nil
+	}
+
+	// NIP-42: Reject non-AUTH events from unauthenticated clients when auth is required
+	if r.requireAuth && !c.IsAuthenticated() {
+		c.SendOK(evt.ID, false, "auth-required: this relay requires NIP-42 authentication")
 		return nil
 	}
 
@@ -447,15 +599,19 @@ func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string,
 	}
 
 	// Send stored events to the client, filtering out expired events
+	sent := 0
 	for _, evt := range events {
 		// NIP-40: Filter out expired events
 		if nip40.ShouldFilterEvent(evt) {
 			continue
 		}
+		if sent >= r.maxEventsPerREQ {
+			break
+		}
 		if err := c.SendEvent(subID, evt); err != nil {
 			log.Printf("Failed to send stored event to client: %v", err)
-			// May want to terminate connection here depending on error
 		}
+		sent++
 	}
 
 	// Send EOSE to indicate end of stored events
@@ -463,7 +619,11 @@ func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string,
 		log.Printf("Failed to send EOSE to client: %v", err)
 	}
 
-	log.Printf("Sent %d stored events for subscription %s", len(events), subID)
+	if sent < len(events) {
+		log.Printf("Sent %d stored events (capped from %d) for subscription %s", sent, len(events), subID)
+	} else {
+		log.Printf("Sent %d stored events for subscription %s", sent, subID)
+	}
 	return nil
 }
 

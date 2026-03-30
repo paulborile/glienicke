@@ -12,12 +12,24 @@ if [[ "$1" == "-h" ]]; then
     echo "  $0          # 10 clients, 20s"
     echo "  $0 20 60    # 20 clients, 60s"
     echo "  $0 50 120   # 50 clients, 120s"
+    echo ""
+    echo "NOTE: Start the relay with rate limiting disabled:"
+    echo "  GLIENICKE_RATE_LIMIT_ENABLED=false ./glienicke-relay --addr :7000"
     exit 0
+fi
+
+# Check that relay is running and warn about rate limiting
+if curl -s http://localhost:8080/health > /dev/null 2>&1; then
+    echo "Relay detected on localhost:8080"
+else
+    echo "WARNING: No relay detected on localhost:8080"
+    echo "Start it with: GLIENICKE_RATE_LIMIT_ENABLED=false ./glienicke-relay --addr :7000"
+    exit 1
 fi
 
 NUM_CLIENTS=${1:-10}
 TEST_DURATION=${2:-20}
-RELAY_URL="ws://localhost:7000"
+RELAY_URL="ws://localhost:8080"
 
 echo "=== NOSTR RELAY LOAD TEST ==="
 echo "Clients: $NUM_CLIENTS"
@@ -41,12 +53,12 @@ test_client() {
     local end=$((start + duration))
     
     while [[ $(date +%s) -lt $end ]]; do
-        if ALGIA_RELAYS="$RELAY_URL" algia post "Load test client $client_id at $(date +%s)" >/dev/null 2>&1; then
+        if ALGIA_RELAYS="$RELAY_URL" algia post "Load test client $client_id at $(date +%s%N)" >/dev/null 2>&1; then
             ((success++))
         else
             ((errors++))
         fi
-        sleep 2
+        sleep 0.1
     done
     
     echo "Client $client_id: $success success, $errors errors"
@@ -60,11 +72,6 @@ TOTAL_ERRORS=0
 
 for i in $(seq 1 $NUM_CLIENTS); do
     test_client $i $TEST_DURATION &
-    
-    # Don't overwhelm relay
-    if [[ $((i % 5)) -eq 0 ]]; then
-        wait
-    fi
 done
 
 wait
