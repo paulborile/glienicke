@@ -43,7 +43,7 @@ type ChannelStore interface {
 }
 
 // Version of the relay
-const Version = "0.19.3"
+const Version = "0.19.5"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -89,6 +89,7 @@ type ipRateLimiter struct {
 	lastRefill time.Time
 	violations int
 	bannedAt   time.Time
+	pubkeys    map[string]bool // authenticated pubkeys seen from this IP
 }
 
 // Relay is the main relay orchestrator
@@ -104,6 +105,7 @@ type Relay struct {
 	maxEventsPerREQ  int
 	rateLimitEnabled bool
 	requireAuth      bool // NIP-42: require authentication before allowing REQ/EVENT
+	closeAfterEOSE   bool // Auto-close subscriptions after sending stored events
 }
 
 // New creates a new relay instance
@@ -122,6 +124,7 @@ func New(store storage.Store) *Relay {
 		ipLimiters:       make(map[string]*ipRateLimiter),
 		maxEventsPerREQ:  defaultMaxEventsPerREQ,
 		rateLimitEnabled: rlEnabled,
+		requireAuth:      true,
 		metrics: &Metrics{
 			startTime:       time.Now(),
 			dbStatus:        "unknown",
@@ -144,6 +147,12 @@ func (r *Relay) SetMaxEventsPerREQ(max int) {
 // SetRequireAuth enables NIP-42 authentication requirement.
 func (r *Relay) SetRequireAuth(enabled bool) {
 	r.requireAuth = enabled
+}
+
+// SetCloseAfterEOSE enables auto-closing subscriptions after EOSE is sent.
+// This frees subscription slots but prevents live event delivery on those subscriptions.
+func (r *Relay) SetCloseAfterEOSE(enabled bool) {
+	r.closeAfterEOSE = enabled
 }
 
 // setupRoutes configures HTTP routes for the relay
@@ -197,7 +206,9 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	client := protocol.NewClient(conn, r, realIP)
-	log.Printf("New WebSocket connection from %s", client.RemoteAddr())
+	ua := req.Header.Get("User-Agent")
+	origin := req.Header.Get("Origin")
+	log.Printf("New WebSocket connection from %s (UA: %s, Origin: %s)", client.RemoteAddr(), ua, origin)
 	if r.rateLimitEnabled {
 		client.SetRateLimit(r.checkRate)
 	}
@@ -311,7 +322,7 @@ func (r *Relay) updateMetrics() {
 const (
 	reqRatePerSec       = 10             // max sustained REQ rate per IP per second
 	reqBurstLimit       = 20             // max burst of REQs per IP
-	banViolationLimit   = 50             // number of rate limit violations before banning
+	banViolationLimit   = 10             // number of rate limit violations before banning
 	banDuration         = 24 * time.Hour // how long an IP stays banned
 	defaultMaxEventsPerREQ = 100         // max events returned per REQ response
 )
@@ -343,7 +354,7 @@ func (r *Relay) IsIPBanned(ip string) bool {
 
 // checkRate implements per-IP rate limiting using a shared token bucket.
 // Returns empty string if allowed, or a reason string if rejected.
-func (r *Relay) checkRate(clientIP string) string {
+func (r *Relay) checkRate(clientIP string, pubkey string) string {
 	r.ipLimiterMu.Lock()
 	defer r.ipLimiterMu.Unlock()
 
@@ -357,8 +368,12 @@ func (r *Relay) checkRate(clientIP string) string {
 		lim = &ipRateLimiter{
 			tokens:     reqBurstLimit,
 			lastRefill: time.Now(),
+			pubkeys:    make(map[string]bool),
 		}
 		r.ipLimiters[clientIP] = lim
+	}
+	if pubkey != "" {
+		lim.pubkeys[pubkey] = true
 	}
 
 	// Refill tokens
@@ -378,7 +393,15 @@ func (r *Relay) checkRate(clientIP string) string {
 
 		if lim.violations >= banViolationLimit {
 			lim.bannedAt = now
-			log.Printf("BANNED IP %s for %v after %d rate limit violations", clientIP, banDuration, lim.violations)
+			pubkeyList := make([]string, 0, len(lim.pubkeys))
+			for pk := range lim.pubkeys {
+				pubkeyList = append(pubkeyList, pk)
+			}
+			if len(pubkeyList) > 0 {
+				log.Printf("BANNED IP %s for %v after %d violations (pubkeys: %s)", clientIP, banDuration, lim.violations, strings.Join(pubkeyList, ", "))
+			} else {
+				log.Printf("BANNED IP %s for %v after %d violations (no authenticated pubkeys)", clientIP, banDuration, lim.violations)
+			}
 			return "banned: too many rate limit violations"
 		}
 
@@ -621,15 +644,19 @@ func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string,
 
 	if sent < len(events) {
 		log.Printf("Sent %d stored events (capped from %d) for subscription %s", sent, len(events), subID)
-	} else {
-		log.Printf("Sent %d stored events for subscription %s", sent, subID)
 	}
+
+	// Auto-close subscription after EOSE to free the slot
+	if r.closeAfterEOSE {
+		c.RemoveSubscription(subID)
+	}
+
 	return nil
 }
 
 // HandleClose processes a CLOSE message from a client
 func (r *Relay) HandleClose(ctx context.Context, c *protocol.Client, subID string) error {
-	log.Printf("Closing subscription %s for client %s", subID, c.RemoteAddr())
+	// Subscription close is routine — don't log
 	c.RemoveSubscription(subID)
 	return nil
 }

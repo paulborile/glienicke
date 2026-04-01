@@ -20,6 +20,7 @@ func setupRelay(t *testing.T) (string, *relay.Relay, func(), string) {
 
 	store := memory.New()
 	r := relay.New(store)
+	r.SetRequireAuth(false) // Disable auth for integration tests
 
 	// Find available port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

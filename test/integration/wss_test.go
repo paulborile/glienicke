@@ -47,6 +47,7 @@ func TestWSS_EndToEndConnection(t *testing.T) {
 
 	// Create relay
 	r := relay.New(store)
+	r.SetRequireAuth(false)
 	defer r.Close()
 
 	// Find an available port

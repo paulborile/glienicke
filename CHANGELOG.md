@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.19.5 - 2026-03-30
+
+### Changed
+- NIP-42 AUTH now required by default (was opt-in)
+- AUTH check now blocks all unauthenticated messages (EVENT, REQ, COUNT), not just REQ/COUNT. Only AUTH events (kind 22242) and CLOSE pass through without authentication.
+- Ban log messages now include authenticated pubkeys for the banned IP
+- Rate limit check tracks pubkey per IP for abuse attribution
+
+## 0.19.4 - 2026-03-30
+
+### Added
+- Auto-close subscriptions after EOSE to free slots (opt-in via `SetCloseAfterEOSE`)
+- Log User-Agent and Origin headers on new WebSocket connections
+
+### Changed
+- Reduce ban violation threshold from 50 to 10 (abusers hit it in under a second anyway)
+- Remove noisy log messages: routine subscription closes and normal stored event counts
+- Only log stored event counts when capped by `maxEventsPerREQ`
+
 ## 0.19.3 - 2026-03-30
 
 ### Added

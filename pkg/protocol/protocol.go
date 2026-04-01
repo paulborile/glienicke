@@ -43,7 +43,7 @@ type Handler interface {
 }
 
 // RateLimitFunc is called before processing a message; returns an error message if rejected, empty string if allowed
-type RateLimitFunc func(clientIP string) string
+type RateLimitFunc func(clientIP string, pubkey string) string
 
 // Client represents a WebSocket client connection
 type Client struct {
@@ -213,24 +213,38 @@ func (c *Client) handleMessage(ctx context.Context, message []byte) error {
 		return fmt.Errorf("invalid message type: %w", err)
 	}
 
-	// NIP-42: Require authentication for REQ and COUNT (EVENT allowed through for AUTH handshake)
-	if c.requireAuth && !c.authenticated {
-		if MessageType(msgType) == MessageTypeReq || MessageType(msgType) == MessageTypeCount {
-			if len(raw) >= 2 {
-				var subID string
-				if json.Unmarshal(raw[1], &subID) == nil {
-					c.SendClosed(subID, "auth-required: this relay requires NIP-42 authentication")
-					return nil
-				}
+	// NIP-42: Require authentication for all messages except CLOSE and AUTH events
+	if c.requireAuth && !c.authenticated && MessageType(msgType) != MessageTypeClose {
+		// Allow AUTH events (kind 22242) through for the handshake
+		if MessageType(msgType) == MessageTypeEvent && len(raw) >= 2 {
+			var partial struct{ Kind int `json:"kind"` }
+			if json.Unmarshal(raw[1], &partial) == nil && partial.Kind == 22242 {
+				goto authenticated
 			}
-			c.SendNotice("auth-required: this relay requires NIP-42 authentication")
-			return nil
 		}
+		// Reject everything else
+		if (MessageType(msgType) == MessageTypeReq || MessageType(msgType) == MessageTypeCount) && len(raw) >= 2 {
+			var subID string
+			if json.Unmarshal(raw[1], &subID) == nil {
+				c.SendClosed(subID, "auth-required: this relay requires NIP-42 authentication")
+				return nil
+			}
+		}
+		if MessageType(msgType) == MessageTypeEvent && len(raw) >= 2 {
+			var partial struct{ ID string `json:"id"` }
+			if json.Unmarshal(raw[1], &partial) == nil {
+				c.SendOK(partial.ID, false, "auth-required: this relay requires NIP-42 authentication")
+				return nil
+			}
+		}
+		c.SendNotice("auth-required: this relay requires NIP-42 authentication")
+		return nil
 	}
+authenticated:
 
 	// Rate limit all messages except CLOSE (always allow clients to clean up subscriptions)
 	if MessageType(msgType) != MessageTypeClose && c.rateLimit != nil {
-		if reason := c.rateLimit(c.realIP); reason != "" {
+		if reason := c.rateLimit(c.realIP, c.authPubKey); reason != "" {
 			// For REQ/COUNT, send CLOSED with the subscription/count ID per Nostr protocol
 			if (MessageType(msgType) == MessageTypeReq || MessageType(msgType) == MessageTypeCount) && len(raw) >= 2 {
 				var subID string
