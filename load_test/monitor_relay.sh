@@ -7,7 +7,7 @@ set -e
 
 MONITOR_INTERVAL=5  # seconds
 OUTPUT_FILE="./load_test_results/relay_metrics.csv"
-RELAY_URL="http://localhost:7000"
+RELAY_URL="http://localhost:8080"
 
 # Colors
 GREEN='\033[0;32m'
@@ -91,7 +91,7 @@ trap handle_interrupt INT TERM
 check_relay() {
     if ! pgrep -f "relay" > /dev/null; then
         echo "❌ No relay process found. Please start the relay first:"
-        echo "   ./relay"
+        echo "   GLIENICKE_RATE_LIMIT_ENABLED=false ./glienicke-relay --addr :7000"
         exit 1
     fi
 }

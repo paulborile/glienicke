@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,6 +12,11 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/paul/glienicke/pkg/event"
+)
+
+const (
+	// MaxSubscriptionsPerClient is the maximum number of concurrent subscriptions per client
+	MaxSubscriptionsPerClient = 20
 )
 
 // MessageType represents the type of Nostr protocol message
@@ -35,6 +42,9 @@ type Handler interface {
 	HandleCount(ctx context.Context, c *Client, countID string, filters []*event.Filter) error
 }
 
+// RateLimitFunc is called before processing a message; returns an error message if rejected, empty string if allowed
+type RateLimitFunc func(clientIP string, pubkey string) string
+
 // Client represents a WebSocket client connection
 type Client struct {
 	conn          *websocket.Conn
@@ -44,18 +54,76 @@ type Client struct {
 	sendCh        chan []byte
 	closeCh       chan struct{}
 	closeOnce     sync.Once
+	realIP        string        // Real client IP from X-Forwarded-For
+	rateLimit     RateLimitFunc // External rate limit check
+
+	// NIP-42 auth
+	requireAuth   bool
+	authenticated bool
+	authChallenge string
+	authPubKey    string // pubkey of authenticated client
 }
 
 // NewClient creates a new WebSocket client
-func NewClient(conn *websocket.Conn, handler Handler) *Client {
-	// log.Printf("New connection from %s", conn.RemoteAddr())
+func NewClient(conn *websocket.Conn, handler Handler, realIP string) *Client {
 	return &Client{
 		conn:          conn,
 		handler:       handler,
 		subscriptions: make(map[string][]*event.Filter),
 		sendCh:        make(chan []byte, 256),
 		closeCh:       make(chan struct{}),
+		realIP:        realIP,
 	}
+}
+
+// SetRateLimit sets an external rate limit function for all incoming messages
+func (c *Client) SetRateLimit(fn RateLimitFunc) {
+	c.rateLimit = fn
+}
+
+// SetRequireAuth enables NIP-42 authentication requirement for this client
+func (c *Client) SetRequireAuth() {
+	c.requireAuth = true
+	// Generate a random challenge
+	b := make([]byte, 16)
+	rand.Read(b)
+	c.authChallenge = hex.EncodeToString(b)
+}
+
+// SendAuth sends an AUTH challenge to the client
+func (c *Client) SendAuth() error {
+	msg := []interface{}{MessageTypeAuth, c.authChallenge}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	select {
+	case c.sendCh <- data:
+		return nil
+	case <-c.closeCh:
+		return fmt.Errorf("client closed")
+	}
+}
+
+// Authenticate marks the client as authenticated with the given pubkey
+func (c *Client) Authenticate(pubkey string) {
+	c.authenticated = true
+	c.authPubKey = pubkey
+}
+
+// IsAuthenticated returns whether the client has completed NIP-42 auth
+func (c *Client) IsAuthenticated() bool {
+	return c.authenticated
+}
+
+// AuthChallenge returns the challenge string sent to this client
+func (c *Client) AuthChallenge() string {
+	return c.authChallenge
+}
+
+// AuthPubKey returns the authenticated client's pubkey
+func (c *Client) AuthPubKey() string {
+	return c.authPubKey
 }
 
 // Start begins processing messages from the client
@@ -92,7 +160,7 @@ func (c *Client) readPump(ctx context.Context) {
 
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				// Don't log close 1005 (no status) as an error - it's a normal condition
 				if !strings.Contains(err.Error(), "close 1005") {
 					log.Printf("WebSocket read error: %v", err)
@@ -145,6 +213,51 @@ func (c *Client) handleMessage(ctx context.Context, message []byte) error {
 		return fmt.Errorf("invalid message type: %w", err)
 	}
 
+	// NIP-42: Require authentication for all messages except CLOSE and AUTH events
+	if c.requireAuth && !c.authenticated && MessageType(msgType) != MessageTypeClose {
+		// Allow AUTH events (kind 22242) through for the handshake
+		if MessageType(msgType) == MessageTypeEvent && len(raw) >= 2 {
+			var partial struct{ Kind int `json:"kind"` }
+			if json.Unmarshal(raw[1], &partial) == nil && partial.Kind == 22242 {
+				goto authenticated
+			}
+		}
+		// Reject everything else
+		if (MessageType(msgType) == MessageTypeReq || MessageType(msgType) == MessageTypeCount) && len(raw) >= 2 {
+			var subID string
+			if json.Unmarshal(raw[1], &subID) == nil {
+				c.SendClosed(subID, "auth-required: this relay requires NIP-42 authentication")
+				return nil
+			}
+		}
+		if MessageType(msgType) == MessageTypeEvent && len(raw) >= 2 {
+			var partial struct{ ID string `json:"id"` }
+			if json.Unmarshal(raw[1], &partial) == nil {
+				c.SendOK(partial.ID, false, "auth-required: this relay requires NIP-42 authentication")
+				return nil
+			}
+		}
+		c.SendNotice("auth-required: this relay requires NIP-42 authentication")
+		return nil
+	}
+authenticated:
+
+	// Rate limit all messages except CLOSE (always allow clients to clean up subscriptions)
+	if MessageType(msgType) != MessageTypeClose && c.rateLimit != nil {
+		if reason := c.rateLimit(c.realIP, c.authPubKey); reason != "" {
+			// For REQ/COUNT, send CLOSED with the subscription/count ID per Nostr protocol
+			if (MessageType(msgType) == MessageTypeReq || MessageType(msgType) == MessageTypeCount) && len(raw) >= 2 {
+				var subID string
+				if json.Unmarshal(raw[1], &subID) == nil {
+					c.SendClosed(subID, reason)
+					return nil
+				}
+			}
+			c.SendNotice(reason)
+			return nil
+		}
+	}
+
 	switch MessageType(msgType) {
 	case MessageTypeEvent:
 		return c.handleEventMessage(ctx, raw)
@@ -195,6 +308,18 @@ func (c *Client) handleReqMessage(ctx context.Context, raw []json.RawMessage) er
 	var subID string
 	if err := json.Unmarshal(raw[1], &subID); err != nil {
 		return fmt.Errorf("invalid subscription ID: %w", err)
+	}
+
+	// Max concurrent subscriptions check (replacing existing sub doesn't count as new)
+	c.subMu.RLock()
+	_, isReplacement := c.subscriptions[subID]
+	subCount := len(c.subscriptions)
+	c.subMu.RUnlock()
+
+	if !isReplacement && subCount >= MaxSubscriptionsPerClient {
+		log.Printf("Max subscriptions reached for client %s (subscription %s, count %d)", c.RemoteAddr(), subID, subCount)
+		c.SendClosed(subID, "rate-limited: too many concurrent subscriptions")
+		return nil
 	}
 
 	// Parse filters
@@ -367,8 +492,11 @@ func (c *Client) HasSubscriptionToPubKey(pubKey string) bool {
 	return false
 }
 
-// RemoteAddr returns the remote address of the client
+// RemoteAddr returns the real client IP if available, otherwise the connection's remote address
 func (c *Client) RemoteAddr() string {
+	if c.realIP != "" {
+		return c.realIP
+	}
 	return c.conn.RemoteAddr().String()
 }
 

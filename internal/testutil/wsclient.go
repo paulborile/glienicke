@@ -48,6 +48,11 @@ func (c *WSClient) Close() error {
 	return c.conn.Close()
 }
 
+// SetReadDeadline sets the read deadline on the underlying connection
+func (c *WSClient) SetReadDeadline(t time.Time) {
+	c.conn.SetReadDeadline(t)
+}
+
 // SendEvent sends an EVENT message
 func (c *WSClient) SendEvent(evt *event.Event) error {
 	msg := []interface{}{"EVENT", evt}
@@ -247,6 +252,37 @@ func (c *WSClient) ExpectNotice(timeout time.Duration) (string, error) {
 		}
 
 		return notice, nil
+	}
+}
+
+// ExpectClosed waits for a CLOSED message for the given subscription
+func (c *WSClient) ExpectClosed(subID string, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	c.conn.SetReadDeadline(deadline)
+	defer c.conn.SetReadDeadline(time.Time{})
+
+	for {
+		msg, err := c.ReadMessage()
+		if err != nil {
+			return "", err
+		}
+
+		if len(msg) < 3 {
+			continue
+		}
+
+		msgType, ok := msg[0].(string)
+		if !ok || msgType != "CLOSED" {
+			continue
+		}
+
+		receivedSubID, ok := msg[1].(string)
+		if !ok || receivedSubID != subID {
+			continue
+		}
+
+		reason, _ := msg[2].(string)
+		return reason, nil
 	}
 }
 

@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.19.5 - 2026-03-30
+
+### Changed
+- NIP-42 AUTH now required by default (was opt-in)
+- AUTH check now blocks all unauthenticated messages (EVENT, REQ, COUNT), not just REQ/COUNT. Only AUTH events (kind 22242) and CLOSE pass through without authentication.
+- Ban log messages now include authenticated pubkeys for the banned IP
+- Rate limit check tracks pubkey per IP for abuse attribution
+
+## 0.19.4 - 2026-03-30
+
+### Added
+- Auto-close subscriptions after EOSE to free slots (opt-in via `SetCloseAfterEOSE`)
+- Log User-Agent and Origin headers on new WebSocket connections
+
+### Changed
+- Reduce ban violation threshold from 50 to 10 (abusers hit it in under a second anyway)
+- Remove noisy log messages: routine subscription closes and normal stored event counts
+- Only log stored event counts when capped by `maxEventsPerREQ`
+
+## 0.19.3 - 2026-03-30
+
+### Added
+- Per-IP rate limiting on all message types (10 msg/sec with burst of 20) to prevent abuse
+- Per-connection max concurrent subscriptions limit (20) with CLOSED message on rejection
+- Auto-ban IPs after 50 rate limit violations (24-hour ban duration)
+- Max events per REQ response cap (default 100) to limit per-request resource usage
+- Real client IP logging from X-Forwarded-For/X-Real-IP headers when running behind a reverse proxy
+- Rate limited request count exposed in health endpoint metrics
+- `GLIENICKE_RATE_LIMIT_ENABLED` env var to disable rate limiting (for load testing)
+- NIP-42 AUTH support: optional authentication requirement with challenge/response handshake (opt-in via `SetRequireAuth`)
+- `--version` flag to print version and exit
+
+### Fixed
+- Suppress spurious "WebSocket read error: close 1000 (normal)" log messages
+
+## 0.19.2 - 2026-03-18
+
+### Fixed
+- Remove incorrect WebSocket proxy detection that rejected all connections arriving via Traefik (`X-Forwarded-Proto: wss` is standard SSL termination behavior, not an error)
+
 ## 0.19.1 - 2026-03-12
 
 ### Fixed
