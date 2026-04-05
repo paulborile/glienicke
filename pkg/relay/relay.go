@@ -43,7 +43,7 @@ type ChannelStore interface {
 }
 
 // Version of the relay
-const Version = "0.19.5"
+const Version = "0.19.6"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -124,7 +124,7 @@ func New(store storage.Store) *Relay {
 		ipLimiters:       make(map[string]*ipRateLimiter),
 		maxEventsPerREQ:  defaultMaxEventsPerREQ,
 		rateLimitEnabled: rlEnabled,
-		requireAuth:      true,
+		requireAuth:      false,
 		metrics: &Metrics{
 			startTime:       time.Now(),
 			dbStatus:        "unknown",

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.19.6 - 2026-04-01
+
+### Changed
+- NIP-42 AUTH reverted to opt-in (default off) — most Nostr clients don't support NIP-42, requiring it blocks all legitimate traffic
+
 ## 0.19.5 - 2026-03-30
 
 ### Changed
