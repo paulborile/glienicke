@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.19.8 - 2026-04-29
+
+### Added
+- NIP-36 content-warning enforcement: events containing terms from a configurable vocabulary file are rejected unless they carry a `content-warning` tag
+- Vocabulary file is reloaded automatically when its mtime changes (polled every 30s)
+- New `--nip36-vocab <path>` CLI flag to enable enforcement and point at the vocabulary file
+- Default vocabulary at `resources/nip36-vocab.txt` covers known NSFW domains, hashtags, and Telegram/anime image-board patterns
+- New `nip36` package with `Policy` API: `New`, `StartWatcher`, `ShouldReject`, `MatchedTerm`, `HasContentWarning`
+
+## 0.19.7 - 2026-04-07
+
+### Added
+- NIP-16: Ephemeral events (kinds 20000-29999) are now broadcast to subscribers but never stored in the database
+- NIP-01: Replaceable events (kind 0, 3, 10000-19999) — SQLite store now enforces keeping only the newest event per pubkey+kind, deleting older duplicates on save
+- Event retention: background goroutine deletes events older than 30 days (configurable via `SetRetentionDays`), runs every hour
+- Retention exempts long-lived identity events: kind 0 (profile metadata), kind 3 (contact list), kind 10002 (relay lists), kind 10050 (DM relay lists)
+
 ## 0.19.6 - 2026-04-01
 
 ### Changed

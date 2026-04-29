@@ -25,6 +25,7 @@ import (
 	"github.com/paul/glienicke/pkg/nips/nip22"
 	"github.com/paul/glienicke/pkg/nips/nip25"
 	"github.com/paul/glienicke/pkg/nips/nip28"
+	"github.com/paul/glienicke/pkg/nips/nip36"
 	"github.com/paul/glienicke/pkg/nips/nip40"
 	"github.com/paul/glienicke/pkg/nips/nip42"
 	"github.com/paul/glienicke/pkg/nips/nip44"
@@ -43,7 +44,7 @@ type ChannelStore interface {
 }
 
 // Version of the relay
-const Version = "0.19.6"
+const Version = "0.19.8"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -106,6 +107,9 @@ type Relay struct {
 	rateLimitEnabled bool
 	requireAuth      bool // NIP-42: require authentication before allowing REQ/EVENT
 	closeAfterEOSE   bool // Auto-close subscriptions after sending stored events
+	retentionDays    int  // Event retention period in days (0 = no retention)
+	stopRetention    chan struct{}
+	nip36Policy      *nip36.Policy // NIP-36 content-warning enforcement (nil = disabled)
 }
 
 // New creates a new relay instance
@@ -125,6 +129,8 @@ func New(store storage.Store) *Relay {
 		maxEventsPerREQ:  defaultMaxEventsPerREQ,
 		rateLimitEnabled: rlEnabled,
 		requireAuth:      false,
+		retentionDays:    defaultRetentionDays,
+		stopRetention:    make(chan struct{}),
 		metrics: &Metrics{
 			startTime:       time.Now(),
 			dbStatus:        "unknown",
@@ -135,6 +141,9 @@ func New(store storage.Store) *Relay {
 
 	// Setup HTTP routes
 	r.setupRoutes()
+
+	// Start background retention cleanup
+	go r.retentionLoop()
 
 	return r
 }
@@ -147,6 +156,63 @@ func (r *Relay) SetMaxEventsPerREQ(max int) {
 // SetRequireAuth enables NIP-42 authentication requirement.
 func (r *Relay) SetRequireAuth(enabled bool) {
 	r.requireAuth = enabled
+}
+
+// SetRetentionDays sets the event retention period in days. 0 disables retention.
+func (r *Relay) SetRetentionDays(days int) {
+	r.retentionDays = days
+}
+
+// SetNIP36Policy enables NIP-36 content-warning enforcement using the given vocabulary file.
+// The file is reloaded automatically when its mtime changes.
+// Pass an empty path to disable.
+func (r *Relay) SetNIP36Policy(vocabFile string) {
+	if vocabFile == "" {
+		if r.nip36Policy != nil {
+			r.nip36Policy.Close()
+			r.nip36Policy = nil
+		}
+		return
+	}
+	r.nip36Policy = nip36.New(vocabFile)
+	r.nip36Policy.StartWatcher(30 * time.Second)
+}
+
+// retentionLoop periodically deletes old events and expired NIP-40 events.
+func (r *Relay) retentionLoop() {
+	// Run once at startup
+	r.runRetention()
+
+	ticker := time.NewTicker(retentionCheckInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.stopRetention:
+			return
+		case <-ticker.C:
+			r.runRetention()
+		}
+	}
+}
+
+func (r *Relay) runRetention() {
+	if r.retentionDays <= 0 || r.store == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cutoff := time.Now().Unix() - int64(r.retentionDays*86400)
+	deleted, err := r.store.DeleteEventsOlderThan(ctx, cutoff, retentionExemptKinds)
+	if err != nil {
+		log.Printf("Retention cleanup error: %v", err)
+		return
+	}
+	if deleted > 0 {
+		log.Printf("Retention cleanup: deleted %d events older than %d days", deleted, r.retentionDays)
+	}
 }
 
 // SetCloseAfterEOSE enables auto-closing subscriptions after EOSE is sent.
@@ -320,12 +386,23 @@ func (r *Relay) updateMetrics() {
 }
 
 const (
-	reqRatePerSec       = 10             // max sustained REQ rate per IP per second
-	reqBurstLimit       = 20             // max burst of REQs per IP
-	banViolationLimit   = 10             // number of rate limit violations before banning
-	banDuration         = 24 * time.Hour // how long an IP stays banned
-	defaultMaxEventsPerREQ = 100         // max events returned per REQ response
+	reqRatePerSec          = 10             // max sustained REQ rate per IP per second
+	reqBurstLimit          = 20             // max burst of REQs per IP
+	banViolationLimit      = 10             // number of rate limit violations before banning
+	banDuration            = 24 * time.Hour // how long an IP stays banned
+	defaultMaxEventsPerREQ = 100            // max events returned per REQ response
+	defaultRetentionDays   = 30             // default event retention period in days
+	retentionCheckInterval = 1 * time.Hour  // how often to run retention cleanup
 )
+
+// retentionExemptKinds are event kinds that should never be deleted by retention.
+// These are long-lived identity/config events that clients expect to persist.
+var retentionExemptKinds = []int{
+	0,     // profile metadata
+	3,     // contact list
+	10002, // relay list (NIP-65)
+	10050, // DM relay list
+}
 
 // isIPBanned checks if an IP is currently banned. Must be called with ipLimiterMu held.
 func (r *Relay) isIPBanned(ip string) bool {
@@ -445,6 +522,15 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 		return nil
 	}
 
+	// NIP-36: Reject NSFW content lacking content-warning tag
+	if r.nip36Policy != nil {
+		if reason := r.nip36Policy.ShouldReject(evt); reason != "" {
+			c.SendOK(evt.ID, false, reason)
+			log.Printf("NIP-36: rejected event %s from %s (no content-warning tag)", evt.ID, evt.PubKey)
+			return nil
+		}
+	}
+
 	// NIP-02: Validate follow list events
 	if nip02.IsFollowListEvent(evt) {
 		if err := nip02.ValidateFollowList(evt); err != nil {
@@ -491,6 +577,13 @@ func (r *Relay) HandleEvent(ctx context.Context, c *protocol.Client, evt *event.
 			c.SendOK(evt.ID, false, fmt.Sprintf("invalid Request to Vanish: %v", err))
 			return fmt.Errorf("invalid Request to Vanish event: %w", err)
 		}
+	}
+
+	// NIP-16: Ephemeral events (kinds 20000-29999) — relay to subscribers but don't store
+	if evt.Kind >= 20000 && evt.Kind < 30000 {
+		r.broadcastEvent(evt)
+		c.SendOK(evt.ID, true, "")
+		return nil
 	}
 
 	// NIP-40: Check for expired events
@@ -732,6 +825,9 @@ func (r *Relay) GetMux() *http.ServeMux {
 
 // Close shuts down the relay
 func (r *Relay) Close() error {
+	// Stop retention goroutine
+	close(r.stopRetention)
+
 	r.clientsMu.Lock()
 	defer r.clientsMu.Unlock()
 

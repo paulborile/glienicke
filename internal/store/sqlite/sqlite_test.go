@@ -207,12 +207,12 @@ func TestSQLiteStore_ReplaceableEvents(t *testing.T) {
 	err = store.SaveEvent(ctx, evt2)
 	require.NoError(t, err)
 
-	// Note: Current SQLite implementation uses ID-based replacement, not kind-based
-	// So both metadata events will exist (they have different IDs)
+	// NIP-01: Replaceable events — only the newest should remain
 	filter := &event.Filter{Authors: []string{kp.PubKeyHex}, Kinds: []int{0}}
 	events, err := store.QueryEvents(ctx, []*event.Filter{filter})
 	require.NoError(t, err)
-	assert.Len(t, events, 2) // Both old and new metadata events exist
+	assert.Len(t, events, 1) // Only the newer metadata event should exist
+	assert.Equal(t, "New metadata", events[0].Content)
 }
 
 func TestSQLiteStore_DeleteEvent(t *testing.T) {

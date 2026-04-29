@@ -261,6 +261,11 @@ func (s *Store) runMigrations() error {
 	return nil
 }
 
+// isReplaceableKind returns true for replaceable event kinds per NIP-01
+func isReplaceableKind(kind int) bool {
+	return kind == 0 || kind == 3 || (kind >= 10000 && kind < 20000)
+}
+
 // SaveEvent stores an event in SQLite
 func (s *Store) SaveEvent(ctx context.Context, evt *event.Event) error {
 	// Check if event is deleted
@@ -271,6 +276,21 @@ func (s *Store) SaveEvent(ctx context.Context, evt *event.Event) error {
 	}
 	if deleted {
 		return fmt.Errorf("event has been deleted")
+	}
+
+	// NIP-01: Replaceable events — keep only the newest per pubkey+kind
+	if isReplaceableKind(evt.Kind) {
+		var existingCreatedAt int64
+		err := s.db.QueryRowContext(ctx,
+			"SELECT created_at FROM events WHERE pubkey = ? AND kind = ? ORDER BY created_at DESC LIMIT 1",
+			evt.PubKey, evt.Kind).Scan(&existingCreatedAt)
+		if err == nil && evt.CreatedAt < existingCreatedAt {
+			// This event is older than what we have — discard it
+			return nil
+		}
+		// Delete all older events with same pubkey+kind
+		_, _ = s.db.ExecContext(ctx, "DELETE FROM events WHERE pubkey = ? AND kind = ? AND id != ?",
+			evt.PubKey, evt.Kind, evt.ID)
 	}
 
 	// Insert or replace event
@@ -781,17 +801,33 @@ func (s *Store) countFilter(ctx context.Context, filter *event.Filter, seen map[
 	return count, nil
 }
 
-// DeleteEventsOlderThan deletes all events older than the specified duration
-// This is useful for implementing event retention policies
-func (s *Store) DeleteEventsOlderThan(ctx context.Context, age time.Duration) (int64, error) {
-	cutoffTime := time.Now().Add(-age).Unix()
+// DeleteEventsOlderThan deletes all events older than the specified duration,
+// excluding exempt kinds (e.g., profile metadata, relay lists).
+func (s *Store) DeleteEventsOlderThan(ctx context.Context, before int64, exemptKinds []int) (int, error) {
+	if len(exemptKinds) == 0 {
+		result, err := s.db.ExecContext(ctx, "DELETE FROM events WHERE created_at < ?", before)
+		if err != nil {
+			return 0, fmt.Errorf("failed to delete old events: %w", err)
+		}
+		n, _ := result.RowsAffected()
+		return int(n), nil
+	}
 
-	result, err := s.db.ExecContext(ctx, "DELETE FROM events WHERE created_at < ?", cutoffTime)
+	placeholders := make([]string, len(exemptKinds))
+	args := []interface{}{before}
+	for i, k := range exemptKinds {
+		placeholders[i] = "?"
+		args = append(args, k)
+	}
+
+	query := fmt.Sprintf("DELETE FROM events WHERE created_at < ? AND kind NOT IN (%s)",
+		strings.Join(placeholders, ","))
+	result, err := s.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete old events: %w", err)
 	}
-
-	return result.RowsAffected()
+	n, _ := result.RowsAffected()
+	return int(n), nil
 }
 
 // PruneDeletedEvents removes old entries from the deleted_events table
@@ -1037,3 +1073,4 @@ func getChannelID(evt *event.Event) string {
 	}
 	return ""
 }
+

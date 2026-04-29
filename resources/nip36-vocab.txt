@@ -1,0 +1,40 @@
+# NIP-36 NSFW vocabulary file
+# One term per line. Lines starting with '#' are ignored.
+# Match is case-insensitive substring against event content and 't' (hashtag) tags.
+# Events containing any of these terms WITHOUT a content-warning tag are rejected.
+# This file is reloaded automatically when its mtime changes.
+
+# Explicit content sites
+pornhub.com
+redtube.com
+xvideos.com
+xhamster.com
+eporner.com
+porntrex.com
+xxxclub.to
+girlsonlyporn.com
+onlyfans.com
+yande.re
+
+# Hashtag-style terms
+nsfw
+porn
+hentai
+spankingblog
+nastycomics
+pornrips
+camgirl
+lewdtuber
+mateodelarioja
+projektmelody
+
+# Chinese NSFW indicators
+色色
+色图
+yande.re热门色图
+天才女高
+被色色入侵
+
+# Telegram NSFW channels
+t.me/yayayagroup
+t.me/mzitu
