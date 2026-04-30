@@ -115,6 +115,10 @@ func (m *mockStore) DeleteChannelEvents(ctx context.Context, channelID string) (
 	return 0, nil
 }
 
+func (m *mockStore) DeleteEventsOlderThan(ctx context.Context, before int64, exemptKinds []int) (int, error) {
+	return 0, nil
+}
+
 func (m *mockStore) Close() error {
 	return nil
 }

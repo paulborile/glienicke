@@ -38,4 +38,9 @@ type Store interface {
 	// DeleteChannelEvents deletes all events for a specific channel (NIP-28)
 	// Returns the number of deleted events
 	DeleteChannelEvents(ctx context.Context, channelID string) (int, error)
+
+	// DeleteEventsOlderThan deletes events with created_at before the given Unix timestamp.
+	// Events with kinds in exemptKinds are not deleted (e.g., profile metadata, relay lists).
+	// Returns the number of deleted events.
+	DeleteEventsOlderThan(ctx context.Context, before int64, exemptKinds []int) (int, error)
 }

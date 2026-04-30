@@ -356,6 +356,29 @@ func (s *Store) DeleteChannelEvents(ctx context.Context, channelID string) (int,
 	return count, nil
 }
 
+// DeleteEventsOlderThan deletes events older than the given timestamp, excluding exempt kinds.
+func (s *Store) DeleteEventsOlderThan(ctx context.Context, before int64, exemptKinds []int) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	exempt := make(map[int]bool, len(exemptKinds))
+	for _, k := range exemptKinds {
+		exempt[k] = true
+	}
+
+	count := 0
+	for id, evt := range s.events {
+		if s.deleted[id] {
+			continue
+		}
+		if evt.CreatedAt < before && !exempt[evt.Kind] {
+			s.deleted[id] = true
+			count++
+		}
+	}
+	return count, nil
+}
+
 func getChannelID(evt *event.Event) string {
 	for _, tag := range evt.Tags {
 		if len(tag) >= 2 && tag[0] == "channel_id" {

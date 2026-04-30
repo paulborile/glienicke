@@ -18,6 +18,7 @@ func main() {
 	dbPath := flag.String("db", "relay.db", "Path to SQLite database (will be created if it doesn't exist)")
 	certFile := flag.String("cert", "", "TLS certificate file for secure WebSocket (WSS)")
 	keyFile := flag.String("key", "", "TLS private key file for secure WebSocket (WSS)")
+	nip36Vocab := flag.String("nip36-vocab", "", "Path to NIP-36 vocabulary file (enables NSFW content-warning enforcement)")
 	version := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
@@ -39,6 +40,11 @@ func main() {
 	// Create relay
 	r := relay.New(store)
 	defer r.Close()
+
+	if *nip36Vocab != "" {
+		r.SetNIP36Policy(*nip36Vocab)
+		log.Printf("NIP-36 enforcement enabled with vocabulary: %s", *nip36Vocab)
+	}
 
 	// Handle shutdown gracefully
 	sigCh := make(chan os.Signal, 1)
