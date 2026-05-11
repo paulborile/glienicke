@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/nbd-wtf/go-nostr"
-	"github.com/paul/glienicke/internal/testutil"
+	"github.com/paulborile/glienicke/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

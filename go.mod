@@ -1,4 +1,4 @@
-module github.com/paul/glienicke
+module github.com/paulborile/glienicke
 
 go 1.25.1
 
@@ -8,6 +8,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/nbd-wtf/go-nostr v0.52.3
 	github.com/stretchr/testify v1.10.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -38,5 +39,4 @@ require (
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

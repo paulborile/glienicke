@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/paul/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/event"
 )
 
 // GetExpiration returns the expiration timestamp from an event's tags.

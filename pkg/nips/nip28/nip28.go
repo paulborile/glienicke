@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/paul/glienicke/pkg/event"
-	"github.com/paul/glienicke/pkg/storage"
+	"github.com/paulborile/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/storage"
 )
 
 const (

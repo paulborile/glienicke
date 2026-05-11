@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul/glienicke/internal/testutil"
+	"github.com/paulborile/glienicke/internal/testutil"
 )
 
 // HealthResponse represents the health check response (copied from relay package)

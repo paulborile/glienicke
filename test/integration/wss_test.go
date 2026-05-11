@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/paul/glienicke/internal/store/memory"
-	"github.com/paul/glienicke/internal/testutil"
-	"github.com/paul/glienicke/pkg/relay"
+	"github.com/paulborile/glienicke/internal/store/memory"
+	"github.com/paulborile/glienicke/internal/testutil"
+	"github.com/paulborile/glienicke/pkg/relay"
 )
 
 func TestWSS_StartTLSMethodExists(t *testing.T) {

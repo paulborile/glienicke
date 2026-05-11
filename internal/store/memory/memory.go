@@ -6,8 +6,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/paul/glienicke/pkg/event"
-	"github.com/paul/glienicke/pkg/storage"
+	"github.com/paulborile/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/storage"
 )
 
 // Store is an in-memory implementation of storage.Store

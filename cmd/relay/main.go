@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/paul/glienicke/internal/store/sqlite"
-	"github.com/paul/glienicke/pkg/relay"
+	"github.com/paulborile/glienicke/internal/store/sqlite"
+	"github.com/paulborile/glienicke/pkg/relay"
 )
 
 func main() {

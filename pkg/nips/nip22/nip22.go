@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/paul/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/event"
 )
 
 const (

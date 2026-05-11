@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/paul/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/event"
 )
 
 var ErrNotFound = errors.New("event not found")

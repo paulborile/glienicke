@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/nbd-wtf/go-nostr"
-	local_event "github.com/paul/glienicke/pkg/event"
+	local_event "github.com/paulborile/glienicke/pkg/event"
 )
 
 // convertNostrEventToLocalEvent converts a nostr.Event to a local_event.Event

@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul/glienicke/internal/store/memory"
-	"github.com/paul/glienicke/internal/testutil"
-	"github.com/paul/glienicke/pkg/event"
-	"github.com/paul/glienicke/pkg/relay"
+	"github.com/paulborile/glienicke/internal/store/memory"
+	"github.com/paulborile/glienicke/internal/testutil"
+	"github.com/paulborile/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/relay"
 )
 
 // setupRelay creates a test relay and returns the WebSocket URL and HTTP URL

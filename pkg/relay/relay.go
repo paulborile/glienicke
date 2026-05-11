@@ -16,25 +16,25 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/nbd-wtf/go-nostr"
-	"github.com/paul/glienicke/internal/store/memory"
-	"github.com/paul/glienicke/internal/store/sqlite"
-	"github.com/paul/glienicke/pkg/event"
-	"github.com/paul/glienicke/pkg/nips/nip02"
-	"github.com/paul/glienicke/pkg/nips/nip09"
-	"github.com/paul/glienicke/pkg/nips/nip11"
-	"github.com/paul/glienicke/pkg/nips/nip22"
-	"github.com/paul/glienicke/pkg/nips/nip25"
-	"github.com/paul/glienicke/pkg/nips/nip28"
-	"github.com/paul/glienicke/pkg/nips/nip36"
-	"github.com/paul/glienicke/pkg/nips/nip40"
-	"github.com/paul/glienicke/pkg/nips/nip42"
-	"github.com/paul/glienicke/pkg/nips/nip44"
-	"github.com/paul/glienicke/pkg/nips/nip50"
-	"github.com/paul/glienicke/pkg/nips/nip59"
-	"github.com/paul/glienicke/pkg/nips/nip62"
-	"github.com/paul/glienicke/pkg/nips/nip65"
-	"github.com/paul/glienicke/pkg/protocol"
-	"github.com/paul/glienicke/pkg/storage"
+	"github.com/paulborile/glienicke/internal/store/memory"
+	"github.com/paulborile/glienicke/internal/store/sqlite"
+	"github.com/paulborile/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/nips/nip02"
+	"github.com/paulborile/glienicke/pkg/nips/nip09"
+	"github.com/paulborile/glienicke/pkg/nips/nip11"
+	"github.com/paulborile/glienicke/pkg/nips/nip22"
+	"github.com/paulborile/glienicke/pkg/nips/nip25"
+	"github.com/paulborile/glienicke/pkg/nips/nip28"
+	"github.com/paulborile/glienicke/pkg/nips/nip36"
+	"github.com/paulborile/glienicke/pkg/nips/nip40"
+	"github.com/paulborile/glienicke/pkg/nips/nip42"
+	"github.com/paulborile/glienicke/pkg/nips/nip44"
+	"github.com/paulborile/glienicke/pkg/nips/nip50"
+	"github.com/paulborile/glienicke/pkg/nips/nip59"
+	"github.com/paulborile/glienicke/pkg/nips/nip62"
+	"github.com/paulborile/glienicke/pkg/nips/nip65"
+	"github.com/paulborile/glienicke/pkg/protocol"
+	"github.com/paulborile/glienicke/pkg/storage"
 )
 
 // ChannelStore defines the interface for storing channel events
@@ -233,7 +233,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		info := &nip11.RelayInformationDocument{
 			Name:          "Glienicke Nostr Relay",
 			Description:   "Glienicke - a Nostr relay written in Go",
-			Software:      "https://github.com/paul/glienicke",
+			Software:      "https://github.com/paulborile/glienicke",
 			Version:       r.version,
 			SupportedNIPs: []int{1, 2, 4, 9, 11, 17, 22, 25, 40, 42, 44, 45, 50, 59, 62, 65},
 			Icon:          "https://www.paulstephenborile.com/wp-content/uploads/2026/02/cropped-logo-only.png",

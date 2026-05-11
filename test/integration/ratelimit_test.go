@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul/glienicke/internal/testutil"
-	"github.com/paul/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/internal/testutil"
+	"github.com/paulborile/glienicke/pkg/event"
 )
 
 func TestReqRateLimiting(t *testing.T) {

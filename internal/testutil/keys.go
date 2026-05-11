@@ -5,7 +5,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/paul/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/event"
 )
 
 // KeyPair represents a Nostr keypair for testing
