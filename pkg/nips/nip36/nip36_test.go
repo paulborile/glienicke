@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/paul/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/event"
 	"github.com/stretchr/testify/assert"
 )
 

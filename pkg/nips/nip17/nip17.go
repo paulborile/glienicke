@@ -3,7 +3,7 @@ package nip17
 import (
 	"encoding/json"
 
-	"github.com/paul/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/event"
 )
 
 const (

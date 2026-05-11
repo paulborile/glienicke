@@ -8,7 +8,7 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip04"
 	"github.com/nbd-wtf/go-nostr/nip44"
-	"github.com/paul/glienicke/internal/testutil"
+	"github.com/paulborile/glienicke/internal/testutil"
 	"github.com/stretchr/testify/assert"
 )
 

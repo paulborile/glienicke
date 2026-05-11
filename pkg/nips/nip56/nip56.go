@@ -3,7 +3,7 @@ package nip56
 import (
 	"fmt"
 
-	"github.com/paul/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/event"
 )
 
 // Report types defined in NIP-56

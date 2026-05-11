@@ -9,8 +9,8 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/paul/glienicke/pkg/event"
-	"github.com/paul/glienicke/pkg/storage"
+	"github.com/paulborile/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/storage"
 )
 
 // Options holds database configuration options

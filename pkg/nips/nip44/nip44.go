@@ -1,7 +1,7 @@
 package nip44
 
 import (
-	"github.com/paul/glienicke/pkg/event"
+	"github.com/paulborile/glienicke/pkg/event"
 )
 
 // IsEncryptedDirectMessage checks if an event is a NIP-44 encrypted direct message.
