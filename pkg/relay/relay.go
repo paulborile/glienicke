@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"encoding/json"
@@ -44,7 +46,32 @@ type ChannelStore interface {
 }
 
 // Version of the relay
-const Version = "0.19.8"
+const Version = "0.20.0"
+
+// maxBroadcastConcurrency caps the number of concurrent per-client send
+// goroutines a single broadcast may spawn. Without a cap, a burst of events
+// across many connections spawns an unbounded number of goroutines, which has
+// been a source of memory/goroutine amplification and process death under load.
+const maxBroadcastConcurrency = 64
+
+// safeGo runs fn in a new goroutine, recovering from any panic so that a panic
+// in one goroutine (e.g. while processing an untrusted event) cannot crash the
+// entire relay process. The label is included in the log line for diagnosis.
+//
+// IMPORTANT: there is no recover() across goroutine boundaries in Go, so every
+// goroutine that touches client-supplied data must be launched through safeGo
+// (or otherwise recover internally) — otherwise an unrecovered panic takes down
+// the whole process with no application log.
+func safeGo(label string, fn func()) {
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("recovered from panic in %s: %v\n%s", label, rec, debug.Stack())
+			}
+		}()
+		fn()
+	}()
+}
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -86,11 +113,12 @@ type HealthResponse struct {
 
 // ipRateLimiter tracks per-IP REQ rate using a token bucket and ban state
 type ipRateLimiter struct {
-	tokens     float64
-	lastRefill time.Time
-	violations int
-	bannedAt   time.Time
-	pubkeys    map[string]bool // authenticated pubkeys seen from this IP
+	tokens      float64
+	lastRefill  time.Time
+	violations  int
+	bannedAt    time.Time
+	pubkeys     map[string]bool // authenticated pubkeys seen from this IP
+	activeConns int             // current open WebSocket connections from this IP
 }
 
 // Relay is the main relay orchestrator
@@ -98,6 +126,7 @@ type Relay struct {
 	store           storage.Store
 	clients         map[*protocol.Client]bool
 	clientsMu       sync.RWMutex
+	activeConns     int64 // global count of open connections (atomic); guards maxConnections
 	version         string
 	metrics         *Metrics
 	mux             *http.ServeMux
@@ -143,7 +172,7 @@ func New(store storage.Store) *Relay {
 	r.setupRoutes()
 
 	// Start background retention cleanup
-	go r.retentionLoop()
+	safeGo("retentionLoop", r.retentionLoop)
 
 	return r
 }
@@ -235,7 +264,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Description:   "Glienicke - a Nostr relay written in Go",
 			Software:      "https://github.com/paulborile/glienicke",
 			Version:       r.version,
-			SupportedNIPs: []int{1, 2, 4, 9, 11, 17, 22, 25, 40, 42, 44, 45, 50, 59, 62, 65},
+			SupportedNIPs: []int{1, 2, 4, 9, 11, 17, 22, 25, 28, 36, 40, 42, 44, 45, 50, 56, 59, 62, 65},
 			Icon:          "https://www.paulstephenborile.com/wp-content/uploads/2026/02/cropped-logo-only.png",
 		}
 
@@ -259,10 +288,33 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Hard global connection ceiling, checked first and unconditionally: it is a
+	// memory-safety limit that protects the process under its container memory
+	// budget regardless of whether per-IP rate limiting is enabled. Released in
+	// the cleanup defer below.
+	if !r.acquireGlobalConnSlot() {
+		log.Printf("Global connection limit reached (max %d); rejecting %s", maxConnections, realIP)
+		http.Error(w, "server at capacity", http.StatusServiceUnavailable)
+		return
+	}
+	defer r.releaseGlobalConnSlot()
+
 	// Reject banned IPs before WebSocket upgrade
 	if r.rateLimitEnabled && r.IsIPBanned(realIP) {
 		http.Error(w, "banned", http.StatusForbidden)
 		return
+	}
+
+	// Cap concurrent connections per IP before the upgrade so a single source
+	// cannot exhaust goroutines/memory by opening unbounded connections. The
+	// slot is released in the cleanup defer below.
+	if r.rateLimitEnabled {
+		if !r.acquireConnSlot(realIP) {
+			log.Printf("Connection limit reached for %s (max %d per IP)", realIP, maxConnsPerIP)
+			http.Error(w, "too many connections", http.StatusTooManyRequests)
+			return
+		}
+		defer r.releaseConnSlot(realIP)
 	}
 
 	conn, err := upgrader.Upgrade(w, req, nil)
@@ -306,10 +358,8 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // HealthHandler handles health check requests
 func (r *Relay) HealthHandler(w http.ResponseWriter, req *http.Request) {
-	r.metrics.mu.RLock()
-	defer r.metrics.mu.RUnlock()
-
-	// Update metrics
+	// Recompute dynamic metrics. updateMetrics manages its own write lock,
+	// so it must NOT be called while holding r.metrics.mu.
 	r.updateMetrics()
 
 	// Get current memory usage
@@ -322,25 +372,36 @@ func (r *Relay) HealthHandler(w http.ResponseWriter, req *http.Request) {
 	activeConnections := len(r.clients)
 	r.clientsMu.RUnlock()
 
+	// Snapshot metrics under a read lock so we read a consistent set of values.
+	r.metrics.mu.RLock()
+	startTime := r.metrics.startTime
+	totalConnections := r.metrics.totalConnections
+	totalEvents := r.metrics.totalEvents
+	totalRequests := r.metrics.totalRequests
+	packetsPerSecond := r.metrics.packetsPerSecond
+	rateLimitedCount := r.metrics.rateLimitedCount
+	dbStatus := r.metrics.dbStatus
+	r.metrics.mu.RUnlock()
+
 	// Determine health status
 	status := "healthy"
-	if r.metrics.dbStatus != "ok" {
+	if dbStatus != "ok" {
 		status = "unhealthy"
 	}
 
 	// Create response
 	response := HealthResponse{
 		Status:            status,
-		UptimeSeconds:     time.Since(r.metrics.startTime).Seconds(),
+		UptimeSeconds:     time.Since(startTime).Seconds(),
 		Version:           r.version,
 		ActiveConnections: activeConnections,
-		TotalConnections:  r.metrics.totalConnections,
-		TotalEvents:       r.metrics.totalEvents,
-		TotalRequests:     r.metrics.totalRequests,
-		PacketsPerSecond:  r.metrics.packetsPerSecond,
-		RateLimitedCount:  r.metrics.rateLimitedCount,
+		TotalConnections:  totalConnections,
+		TotalEvents:       totalEvents,
+		TotalRequests:     totalRequests,
+		PacketsPerSecond:  packetsPerSecond,
+		RateLimitedCount:  rateLimitedCount,
 		MemoryUsageMB:     memoryUsageMB,
-		DatabaseStatus:    r.metrics.dbStatus,
+		DatabaseStatus:    dbStatus,
 		Timestamp:         time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -355,9 +416,30 @@ func (r *Relay) HealthHandler(w http.ResponseWriter, req *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// updateMetrics updates dynamic metrics like packets per second
+// updateMetrics updates dynamic metrics like packets per second and database
+// status. It acquires the metrics write lock itself, so callers must NOT hold
+// r.metrics.mu when calling it.
 func (r *Relay) updateMetrics() {
+	// Check database status outside the metrics lock: the ping can block for up
+	// to 5s, and holding the write lock that long would stall every connection
+	// handler that needs to bump packet counters.
+	dbStatus := "not_initialized"
+	if r.store != nil {
+		// Simple ping - try to query count of events
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, err := r.store.CountEvents(ctx, []*event.Filter{})
+		cancel()
+		if err != nil {
+			dbStatus = "error: " + err.Error()
+		} else {
+			dbStatus = "ok"
+		}
+	}
+
 	now := time.Now()
+
+	r.metrics.mu.Lock()
+	defer r.metrics.mu.Unlock()
 
 	// Calculate packets per second for the last minute
 	if now.Sub(r.metrics.lastPacketReset) >= time.Minute {
@@ -368,21 +450,7 @@ func (r *Relay) updateMetrics() {
 		r.metrics.packetsPerSecond = float64(r.metrics.packetCount) / now.Sub(r.metrics.lastPacketReset).Seconds()
 	}
 
-	// Check database status
-	if r.store != nil {
-		// Simple ping - try to query count of events
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		_, err := r.store.CountEvents(ctx, []*event.Filter{})
-		if err != nil {
-			r.metrics.dbStatus = "error: " + err.Error()
-		} else {
-			r.metrics.dbStatus = "ok"
-		}
-	} else {
-		r.metrics.dbStatus = "not_initialized"
-	}
+	r.metrics.dbStatus = dbStatus
 }
 
 const (
@@ -393,6 +461,8 @@ const (
 	defaultMaxEventsPerREQ = 100            // max events returned per REQ response
 	defaultRetentionDays   = 30             // default event retention period in days
 	retentionCheckInterval = 1 * time.Hour  // how often to run retention cleanup
+	maxConnsPerIP          = 32             // max concurrent WebSocket connections from a single IP
+	maxConnections         = 1024           // max concurrent WebSocket connections across all IPs
 )
 
 // retentionExemptKinds are event kinds that should never be deleted by retention.
@@ -427,6 +497,60 @@ func (r *Relay) IsIPBanned(ip string) bool {
 	r.ipLimiterMu.Lock()
 	defer r.ipLimiterMu.Unlock()
 	return r.isIPBanned(ip)
+}
+
+// acquireGlobalConnSlot atomically reserves one of the maxConnections global
+// connection slots. It returns false if the relay is already at capacity, in
+// which case no slot is reserved. Every successful acquire must be paired with
+// exactly one releaseGlobalConnSlot. Using an atomic counter (rather than
+// len(clients)) makes the check-and-reserve race-free across concurrent accepts.
+func (r *Relay) acquireGlobalConnSlot() bool {
+	if atomic.AddInt64(&r.activeConns, 1) > maxConnections {
+		atomic.AddInt64(&r.activeConns, -1)
+		return false
+	}
+	return true
+}
+
+// releaseGlobalConnSlot releases a slot reserved by acquireGlobalConnSlot.
+func (r *Relay) releaseGlobalConnSlot() {
+	atomic.AddInt64(&r.activeConns, -1)
+}
+
+// acquireConnSlot reserves a connection slot for clientIP. It returns false if
+// the IP already holds maxConnsPerIP concurrent connections, in which case no
+// slot is reserved and the caller must reject the connection. Every successful
+// acquire must be paired with exactly one releaseConnSlot.
+func (r *Relay) acquireConnSlot(clientIP string) bool {
+	r.ipLimiterMu.Lock()
+	defer r.ipLimiterMu.Unlock()
+
+	lim, ok := r.ipLimiters[clientIP]
+	if !ok {
+		lim = &ipRateLimiter{
+			tokens:     reqBurstLimit,
+			lastRefill: time.Now(),
+			pubkeys:    make(map[string]bool),
+		}
+		r.ipLimiters[clientIP] = lim
+	}
+
+	if lim.activeConns >= maxConnsPerIP {
+		return false
+	}
+	lim.activeConns++
+	return true
+}
+
+// releaseConnSlot releases a connection slot previously reserved by
+// acquireConnSlot. It is safe to call for an IP with no limiter entry.
+func (r *Relay) releaseConnSlot(clientIP string) {
+	r.ipLimiterMu.Lock()
+	defer r.ipLimiterMu.Unlock()
+
+	if lim, ok := r.ipLimiters[clientIP]; ok && lim.activeConns > 0 {
+		lim.activeConns--
+	}
 }
 
 // checkRate implements per-IP rate limiting using a shared token bucket.
@@ -782,40 +906,74 @@ func (r *Relay) HandleCount(ctx context.Context, c *protocol.Client, countID str
 	return nil
 }
 
-// broadcastEvent sends an event to all clients with matching subscriptions
+// broadcastEvent sends an event to all clients with matching subscriptions.
+//
+// Sends run concurrently but are bounded by maxBroadcastConcurrency so a burst
+// of events cannot spawn an unbounded number of goroutines, and each send runs
+// under panic recovery so a panic while matching/sending one client's event
+// cannot crash the whole relay.
 func (r *Relay) broadcastEvent(evt *event.Event) {
+	// NIP-40: Filter out expired events once, up front, rather than per client.
+	if nip40.ShouldFilterEvent(evt) {
+		return
+	}
+
+	// Snapshot the current clients under the lock, then release it before doing
+	// per-client work so we don't hold clientsMu for the duration of the sends.
 	r.clientsMu.RLock()
-	defer r.clientsMu.RUnlock()
-
+	clients := make([]*protocol.Client, 0, len(r.clients))
 	for client := range r.clients {
-		go func(c *protocol.Client) {
-			// NIP-40: Filter out expired events
-			if nip40.ShouldFilterEvent(evt) {
-				return
+		clients = append(clients, client)
+	}
+	r.clientsMu.RUnlock()
+
+	// NIP-44: Encrypted Direct Messages (kind 4) — only the recipient receives.
+	var dmRecipient string
+	isDM := nip44.IsEncryptedDirectMessage(evt)
+	if isDM {
+		pk, found := nip44.GetRecipientPubKey(evt)
+		if !found {
+			return // Malformed DM with no recipient: deliver to nobody.
+		}
+		dmRecipient = pk
+	}
+
+	// Run the fan-out in one background goroutine so the publishing client's
+	// handler returns immediately and is never blocked by a slow subscriber.
+	// Inside, a semaphore bounds the number of concurrent per-client sends.
+	safeGo("broadcastEvent.dispatch", func() {
+		sem := make(chan struct{}, maxBroadcastConcurrency)
+		var wg sync.WaitGroup
+
+		for _, client := range clients {
+			c := client
+			if isDM && !c.HasSubscriptionToPubKey(dmRecipient) {
+				continue // Not the recipient or not subscribed to recipient.
 			}
 
-			// NIP-44: Encrypted Direct Messages (kind 4)
-			if nip44.IsEncryptedDirectMessage(evt) {
-				recipientPubKey, found := nip44.GetRecipientPubKey(evt)
-				if !found || !c.HasSubscriptionToPubKey(recipientPubKey) {
-					return // Don't broadcast if not the recipient or not subscribed to recipient
-				}
-			}
+			wg.Add(1)
+			sem <- struct{}{} // Acquire a slot (blocks once maxBroadcastConcurrency are in flight).
+			safeGo("broadcastEvent.send", func() {
+				defer wg.Done()
+				defer func() { <-sem }() // Release the slot.
 
-			subs := c.GetSubscriptions()
-			for subID, filters := range subs {
-				// Check if event matches any filter
-				for _, filter := range filters {
-					if evt.Matches(filter) {
-						if err := c.SendEvent(subID, evt); err != nil {
-							log.Printf("Failed to send event to client: %v", err)
+				subs := c.GetSubscriptions()
+				for subID, filters := range subs {
+					// Check if event matches any filter
+					for _, filter := range filters {
+						if evt.Matches(filter) {
+							if err := c.SendEvent(subID, evt); err != nil {
+								log.Printf("Failed to send event to client: %v", err)
+							}
+							return // Only send once per subscription
 						}
-						return // Only send once per subscription
 					}
 				}
-			}
-		}(client)
-	}
+			})
+		}
+
+		wg.Wait()
+	})
 }
 
 // GetMux returns the HTTP multiplexer for the relay

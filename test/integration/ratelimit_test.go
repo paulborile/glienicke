@@ -160,3 +160,56 @@ func TestMaxConcurrentSubscriptions(t *testing.T) {
 
 	t.Logf("Max subscription limit enforced: %s", reason)
 }
+
+// maxConnsPerIP mirrors the unexported relay constant. Keep in sync.
+const maxConnsPerIP = 32
+
+func TestMaxConnectionsPerIP(t *testing.T) {
+	url, _, cleanup, _ := setupRelay(t)
+	defer cleanup()
+
+	// Open up to the per-IP limit; all should succeed (all from 127.0.0.1).
+	conns := make([]*testutil.WSClient, 0, maxConnsPerIP)
+	defer func() {
+		for _, c := range conns {
+			c.Close()
+		}
+	}()
+
+	for i := 0; i < maxConnsPerIP; i++ {
+		c, err := testutil.NewWSClient(url)
+		if err != nil {
+			t.Fatalf("connection %d/%d should have succeeded, got: %v", i+1, maxConnsPerIP, err)
+		}
+		conns = append(conns, c)
+	}
+
+	// The next connection from the same IP must be rejected at the HTTP layer,
+	// surfacing as a failed WebSocket handshake.
+	if over, err := testutil.NewWSClient(url); err == nil {
+		over.Close()
+		t.Fatalf("connection %d should have been rejected (limit %d), but it succeeded", maxConnsPerIP+1, maxConnsPerIP)
+	}
+
+	// Closing one connection must free a slot. Give the server a moment to run
+	// the cleanup defer that releases the slot, then a new connection succeeds.
+	conns[0].Close()
+	conns = conns[1:]
+
+	deadline := time.Now().Add(2 * time.Second)
+	var replacement *testutil.WSClient
+	for time.Now().Before(deadline) {
+		c, err := testutil.NewWSClient(url)
+		if err == nil {
+			replacement = c
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if replacement == nil {
+		t.Fatal("a connection slot should have been freed after closing one connection, but new connections kept being rejected")
+	}
+	conns = append(conns, replacement)
+
+	t.Logf("Per-IP connection cap enforced at %d, slot released on disconnect", maxConnsPerIP)
+}
