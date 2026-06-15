@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -17,6 +18,13 @@ import (
 const (
 	// MaxSubscriptionsPerClient is the maximum number of concurrent subscriptions per client
 	MaxSubscriptionsPerClient = 20
+
+	// sendQueueSize bounds the number of outbound messages buffered per client.
+	// A slow consumer that fills this queue is disconnected rather than allowed
+	// to accumulate unbounded queued data — this caps per-client memory and
+	// prevents a few stalled clients from exhausting the process under a tight
+	// container memory limit.
+	sendQueueSize = 64
 )
 
 // MessageType represents the type of Nostr protocol message
@@ -70,7 +78,7 @@ func NewClient(conn *websocket.Conn, handler Handler, realIP string) *Client {
 		conn:          conn,
 		handler:       handler,
 		subscriptions: make(map[string][]*event.Filter),
-		sendCh:        make(chan []byte, 256),
+		sendCh:        make(chan []byte, sendQueueSize),
 		closeCh:       make(chan struct{}),
 		realIP:        realIP,
 	}
@@ -90,6 +98,35 @@ func (c *Client) SetRequireAuth() {
 	c.authChallenge = hex.EncodeToString(b)
 }
 
+// enqueue queues a pre-marshalled message for delivery to the client.
+//
+// The send is non-blocking: if the client's send queue is full it is a slow or
+// stalled consumer, so we disconnect it and return an error rather than block
+// the caller (e.g. a broadcast goroutine) and accumulate unbounded queued data.
+// This bounds per-client memory under a tight container limit.
+func (c *Client) enqueue(data []byte) error {
+	// Check for a closed connection first. A bare select would race between the
+	// closeCh and sendCh cases when both are ready (Go picks randomly), so an
+	// already-closed client could still accept a message.
+	select {
+	case <-c.closeCh:
+		return fmt.Errorf("client closed")
+	default:
+	}
+
+	select {
+	case c.sendCh <- data:
+		return nil
+	case <-c.closeCh:
+		return fmt.Errorf("client closed")
+	default:
+		// Queue full — the consumer is too slow to keep up. Drop the connection.
+		log.Printf("Send queue full for %s; disconnecting slow client", c.RemoteAddr())
+		c.Close()
+		return fmt.Errorf("client send queue full")
+	}
+}
+
 // SendAuth sends an AUTH challenge to the client
 func (c *Client) SendAuth() error {
 	msg := []interface{}{MessageTypeAuth, c.authChallenge}
@@ -97,12 +134,7 @@ func (c *Client) SendAuth() error {
 	if err != nil {
 		return err
 	}
-	select {
-	case c.sendCh <- data:
-		return nil
-	case <-c.closeCh:
-		return fmt.Errorf("client closed")
-	}
+	return c.enqueue(data)
 }
 
 // Authenticate marks the client as authenticated with the given pubkey
@@ -147,6 +179,14 @@ func (c *Client) Start(ctx context.Context) {
 
 // readPump reads messages from the WebSocket connection
 func (c *Client) readPump(ctx context.Context) {
+	// Recover from any panic while handling untrusted client input so a single
+	// malformed message tears down only this connection, never the whole relay
+	// process. (There is no recover() across goroutine boundaries in Go.)
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("recovered from panic in readPump: %v\n%s", rec, debug.Stack())
+		}
+	}()
 	defer c.Close()
 
 	for {
@@ -178,6 +218,13 @@ func (c *Client) readPump(ctx context.Context) {
 
 // writePump sends messages to the WebSocket connection
 func (c *Client) writePump(ctx context.Context) {
+	// Recover from any panic so a write-side failure tears down only this
+	// connection, never the whole relay process.
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("recovered from panic in writePump: %v\n%s", rec, debug.Stack())
+		}
+	}()
 	defer c.Close()
 
 	for {
@@ -395,13 +442,7 @@ func (c *Client) SendEvent(subID string, evt *event.Event) error {
 	if err != nil {
 		return err
 	}
-
-	select {
-	case c.sendCh <- data:
-		return nil
-	case <-c.closeCh:
-		return fmt.Errorf("client closed")
-	}
+	return c.enqueue(data)
 }
 
 // SendEOSE sends an end-of-stored-events message
@@ -411,13 +452,7 @@ func (c *Client) SendEOSE(subID string) error {
 	if err != nil {
 		return err
 	}
-
-	select {
-	case c.sendCh <- data:
-		return nil
-	case <-c.closeCh:
-		return fmt.Errorf("client closed")
-	}
+	return c.enqueue(data)
 }
 
 // SendOK sends an OK message in response to an EVENT
@@ -427,13 +462,7 @@ func (c *Client) SendOK(eventID string, accepted bool, message string) error {
 	if err != nil {
 		return err
 	}
-
-	select {
-	case c.sendCh <- data:
-		return nil
-	case <-c.closeCh:
-		return fmt.Errorf("client closed")
-	}
+	return c.enqueue(data)
 }
 
 // SendNotice sends a human-readable notice message
@@ -443,13 +472,7 @@ func (c *Client) SendNotice(message string) error {
 	if err != nil {
 		return err
 	}
-
-	select {
-	case c.sendCh <- data:
-		return nil
-	case <-c.closeCh:
-		return fmt.Errorf("client closed")
-	}
+	return c.enqueue(data)
 }
 
 // Close closes the client connection
@@ -514,13 +537,7 @@ func (c *Client) SendCount(countID string, count int, approximate bool) error {
 	if err != nil {
 		return err
 	}
-
-	select {
-	case c.sendCh <- data:
-		return nil
-	case <-c.closeCh:
-		return fmt.Errorf("client closed")
-	}
+	return c.enqueue(data)
 }
 
 // SendClosed sends a CLOSED message to the client (NIP-45)
@@ -530,11 +547,5 @@ func (c *Client) SendClosed(countID string, reason string) error {
 	if err != nil {
 		return err
 	}
-
-	select {
-	case c.sendCh <- data:
-		return nil
-	case <-c.closeCh:
-		return fmt.Errorf("client closed")
-	}
+	return c.enqueue(data)
 }

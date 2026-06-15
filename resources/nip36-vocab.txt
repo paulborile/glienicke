@@ -45,3 +45,11 @@ yande.re热门色图
 # Telegram NSFW channels
 t.me/yayayagroup
 t.me/mzitu
+
+# Mastodon NSFW instances and atomstr RSS mirrors
+baraag.net
+baraag-net.mostr.pub
+mostr.pub
+pervertdeye
+amanda sparkle
+xierra099

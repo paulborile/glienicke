@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.20.0 - 2026-06-15
+
+### Fixed
+- Silent process crashes: a panic in any per-connection goroutine (handling untrusted client input) or in a broadcast send goroutine would take down the whole relay with no log line. Added panic recovery to the read/write pumps and routed broadcast and retention goroutines through a `safeGo` helper that recovers and logs the stack. Investigation of production logs showed ~80 unlogged restarts over 8 days driven by this.
+- Data race in the `/health` handler: it held the metrics read lock while `updateMetrics` wrote `packetCount`/`packetsPerSecond`/`dbStatus`. `updateMetrics` now takes its own write lock (and runs the DB ping outside the lock to avoid stalling connection handlers); the handler snapshots fields under a short read lock.
+- Slow clients could block sender goroutines indefinitely: every send blocked until the client's 256-deep queue drained. Sends are now non-blocking and a client whose queue is full is disconnected, bounding per-client memory under backpressure.
+
+### Added
+- Global connection cap (1024 concurrent connections across all IPs): new connections are rejected with HTTP 503 before the WebSocket upgrade. Hard memory-safety ceiling, enforced even when rate limiting is disabled.
+- Per-IP connection cap (32 concurrent connections per source IP): excess connections rejected with HTTP 429 before the upgrade, preventing a single source from exhausting goroutines/memory.
+
+### Changed
+- Bounded the per-client outbound send queue from 256 to 64 messages, with disconnect-on-full, to cap per-connection memory.
+- Bounded broadcast fan-out: a single event broadcast now dispatches sends through a semaphore (max 64 concurrent) inside one background goroutine, instead of spawning an unbounded goroutine per client per event. The publishing client is no longer blocked by slow subscribers.
+
 ## 0.19.8 - 2026-04-29
 
 ### Added
