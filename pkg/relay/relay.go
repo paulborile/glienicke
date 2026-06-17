@@ -46,7 +46,7 @@ type ChannelStore interface {
 }
 
 // Version of the relay
-const Version = "0.20.0"
+const Version = "0.20.1"
 
 // maxBroadcastConcurrency caps the number of concurrent per-client send
 // goroutines a single broadcast may spawn. Without a cap, a burst of events
@@ -123,15 +123,15 @@ type ipRateLimiter struct {
 
 // Relay is the main relay orchestrator
 type Relay struct {
-	store           storage.Store
-	clients         map[*protocol.Client]bool
-	clientsMu       sync.RWMutex
-	activeConns     int64 // global count of open connections (atomic); guards maxConnections
-	version         string
-	metrics         *Metrics
-	mux             *http.ServeMux
-	ipLimiters      map[string]*ipRateLimiter
-	ipLimiterMu     sync.Mutex
+	store            storage.Store
+	clients          map[*protocol.Client]bool
+	clientsMu        sync.RWMutex
+	activeConns      int64 // global count of open connections (atomic); guards maxConnections
+	version          string
+	metrics          *Metrics
+	mux              *http.ServeMux
+	ipLimiters       map[string]*ipRateLimiter
+	ipLimiterMu      sync.Mutex
 	maxEventsPerREQ  int
 	rateLimitEnabled bool
 	requireAuth      bool // NIP-42: require authentication before allowing REQ/EVENT
@@ -802,6 +802,13 @@ func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string,
 	r.metrics.lastPacketTime = time.Now()
 	r.metrics.mu.Unlock()
 
+	// Clamp every filter's limit to maxEventsPerREQ before querying. The store
+	// translates filter.Limit into a SQL LIMIT, so this bounds how many rows the
+	// query materializes in memory — without it, a tag/author filter with no
+	// client-supplied limit pulls the entire matching set (thousands of full
+	// events) into RAM on a multi-GB database, which is a primary OOM vector.
+	r.clampFilterLimits(filters)
+
 	var events []*event.Event
 	var err error
 
@@ -869,6 +876,22 @@ func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string,
 	}
 
 	return nil
+}
+
+// clampFilterLimits caps each filter's limit at maxEventsPerREQ. A client may
+// request fewer, but never more; a filter with no limit is given maxEventsPerREQ.
+// This is what bounds the number of rows a query materializes in memory.
+func (r *Relay) clampFilterLimits(filters []*event.Filter) {
+	maxLimit := r.maxEventsPerREQ
+	if maxLimit <= 0 {
+		return // No cap configured; leave filters untouched.
+	}
+	for _, f := range filters {
+		if f.Limit == nil || *f.Limit > maxLimit {
+			capped := maxLimit
+			f.Limit = &capped
+		}
+	}
 }
 
 // HandleClose processes a CLOSE message from a client

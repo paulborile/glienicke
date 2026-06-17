@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.20.1 - 2026-06-17
+
+### Fixed
+- Out-of-memory restarts under the container memory limit: production was OOM-killed (cgroup memory limit) roughly hourly to twice-daily, every kill at ~375 MiB against a 384 MiB limit. The growth was in cgo SQLite memory (invisible to `GOMEMLIMIT`) driven by unbounded query result sets on a multi-GB database. Two fixes:
+  - REQ filter limits are now clamped server-side to `maxEventsPerREQ` (100) before querying, so a filter with no client-supplied limit no longer materializes the entire matching set (thousands of full events) into memory. Previously the cap was applied in Go only after loading every matching row.
+  - SQLite `MaxOpenConns` reduced from 25 to 8. Each connection can hold its own page cache and in-memory temp working set, so the pool size directly multiplies worst-case query memory under concurrent load.
+
 ## 0.20.0 - 2026-06-15
 
 ### Fixed
