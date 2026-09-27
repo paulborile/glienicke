@@ -46,7 +46,7 @@ type ChannelStore interface {
 }
 
 // Version of the relay
-const Version = "0.20.2"
+const Version = "0.20.3"
 
 // maxBroadcastConcurrency caps the number of concurrent per-client send
 // goroutines a single broadcast may spawn. Without a cap, a burst of events
@@ -454,15 +454,25 @@ func (r *Relay) updateMetrics() {
 }
 
 const (
-	reqRatePerSec          = 10             // max sustained REQ rate per IP per second
-	reqBurstLimit          = 20             // max burst of REQs per IP
-	banViolationLimit      = 10             // number of rate limit violations before banning
-	banDuration            = 24 * time.Hour // how long an IP stays banned
-	defaultMaxEventsPerREQ = 100            // max events returned per REQ response
-	defaultRetentionDays   = 30             // default event retention period in days
-	retentionCheckInterval = 1 * time.Hour  // how often to run retention cleanup
-	maxConnsPerIP          = 32             // max concurrent WebSocket connections from a single IP
-	maxConnections         = 1024           // max concurrent WebSocket connections across all IPs
+	reqRatePerSec     = 10             // max sustained REQ rate per IP per second
+	reqBurstLimit     = 20             // max burst of REQs per IP
+	banViolationLimit = 10             // number of rate limit violations before banning
+	banDuration       = 24 * time.Hour // how long an IP stays banned
+
+	// defaultMaxEventsPerREQ caps stored events sent per REQ. HandleReq enqueues
+	// this many messages into the client's send channel in a tight loop with no
+	// pacing, so it must stay well under protocol.sendQueueSize (64) — otherwise
+	// the burst overflows the channel before the writePump goroutine can drain
+	// it, and even a healthy, fast-reading client gets dropped as a "slow
+	// client" on its very first subscription. Kept with headroom for the
+	// trailing EOSE message and any other traffic (broadcasts, other
+	// subscriptions) queued concurrently during replay.
+	defaultMaxEventsPerREQ = 50
+
+	defaultRetentionDays   = 30            // default event retention period in days
+	retentionCheckInterval = 1 * time.Hour // how often to run retention cleanup
+	maxConnsPerIP          = 32            // max concurrent WebSocket connections from a single IP
+	maxConnections         = 1024          // max concurrent WebSocket connections across all IPs
 )
 
 // retentionExemptKinds are event kinds that should never be deleted by retention.

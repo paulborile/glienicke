@@ -1,9 +1,14 @@
 # Changelog
 
+## 0.20.3 - 2026-09-27
+
+### Fixed
+- REQ replies could overflow a client's own send queue and get it disconnected as a "slow client" on its very first subscription, even when the client was healthy and reading immediately: `defaultMaxEventsPerREQ` (100) was larger than the per-client send queue (`sendQueueSize`, 64), and `HandleReq` enqueues its entire capped reply in one uninterrupted loop with no pacing. Any subscription matching 65+ stored events overflowed the queue before the write goroutine could drain a single message, tripping the queue-full disconnect and logging the remaining queued sends as "client closed" — visible in production as a repeating burst of "Send queue full ... disconnecting slow client" followed by dozens of "Failed to send stored event to client: client closed" lines, especially for clients that auto-reconnect and immediately resubscribe. `defaultMaxEventsPerREQ` is now 50, kept with headroom under the send queue so a REQ's entire reply always fits in one burst.
+
 ## 0.20.2 - 2026-09-27
 
 ### Fixed
-- NIP-42 `AUTH` message type was never handled: `MessageTypeAuth` was defined but the message dispatcher only handled `EVENT`/`REQ`/`CLOSE`/`COUNT`, so a client replying to an auth challenge with the spec's own `["AUTH", <event>]` message (rather than wrapping it in `["EVENT", ...]`) got `unknown message type: AUTH` and never authenticated. Under `requireAuth`, this left the client stuck unauthenticated, repeatedly rejected, and its queued stored-events piled up until the 64-slot send buffer filled and it was disconnected as a "slow client" — producing a reconnect loop visible in production logs every few seconds. The pre-auth handshake gate and the message dispatcher now accept the auth event via either message shape.
+- NIP-42 `AUTH` message type was never handled: `MessageTypeAuth` was defined but the message dispatcher only handled `EVENT`/`REQ`/`CLOSE`/`COUNT`, so a client replying to an auth challenge with the spec's own `["AUTH", <event>]` message (rather than wrapping it in `["EVENT", ...]`) got `unknown message type: AUTH` and never authenticated. This is a real protocol gap fixed here, though investigation of a subsequent production log (after this fix was deployed) showed the reconnect-storm symptom actually seen in prod was a separate bug — see 0.20.3. The pre-auth handshake gate and the message dispatcher now accept the auth event via either message shape.
 
 ## 0.20.1 - 2026-06-17
 
