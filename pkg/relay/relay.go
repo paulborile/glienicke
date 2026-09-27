@@ -46,7 +46,7 @@ type ChannelStore interface {
 }
 
 // Version of the relay
-const Version = "0.20.0"
+const Version = "0.20.3"
 
 // maxBroadcastConcurrency caps the number of concurrent per-client send
 // goroutines a single broadcast may spawn. Without a cap, a burst of events
@@ -123,15 +123,15 @@ type ipRateLimiter struct {
 
 // Relay is the main relay orchestrator
 type Relay struct {
-	store           storage.Store
-	clients         map[*protocol.Client]bool
-	clientsMu       sync.RWMutex
-	activeConns     int64 // global count of open connections (atomic); guards maxConnections
-	version         string
-	metrics         *Metrics
-	mux             *http.ServeMux
-	ipLimiters      map[string]*ipRateLimiter
-	ipLimiterMu     sync.Mutex
+	store            storage.Store
+	clients          map[*protocol.Client]bool
+	clientsMu        sync.RWMutex
+	activeConns      int64 // global count of open connections (atomic); guards maxConnections
+	version          string
+	metrics          *Metrics
+	mux              *http.ServeMux
+	ipLimiters       map[string]*ipRateLimiter
+	ipLimiterMu      sync.Mutex
 	maxEventsPerREQ  int
 	rateLimitEnabled bool
 	requireAuth      bool // NIP-42: require authentication before allowing REQ/EVENT
@@ -454,15 +454,25 @@ func (r *Relay) updateMetrics() {
 }
 
 const (
-	reqRatePerSec          = 10             // max sustained REQ rate per IP per second
-	reqBurstLimit          = 20             // max burst of REQs per IP
-	banViolationLimit      = 10             // number of rate limit violations before banning
-	banDuration            = 24 * time.Hour // how long an IP stays banned
-	defaultMaxEventsPerREQ = 100            // max events returned per REQ response
-	defaultRetentionDays   = 30             // default event retention period in days
-	retentionCheckInterval = 1 * time.Hour  // how often to run retention cleanup
-	maxConnsPerIP          = 32             // max concurrent WebSocket connections from a single IP
-	maxConnections         = 1024           // max concurrent WebSocket connections across all IPs
+	reqRatePerSec     = 10             // max sustained REQ rate per IP per second
+	reqBurstLimit     = 20             // max burst of REQs per IP
+	banViolationLimit = 10             // number of rate limit violations before banning
+	banDuration       = 24 * time.Hour // how long an IP stays banned
+
+	// defaultMaxEventsPerREQ caps stored events sent per REQ. HandleReq enqueues
+	// this many messages into the client's send channel in a tight loop with no
+	// pacing, so it must stay well under protocol.sendQueueSize (64) — otherwise
+	// the burst overflows the channel before the writePump goroutine can drain
+	// it, and even a healthy, fast-reading client gets dropped as a "slow
+	// client" on its very first subscription. Kept with headroom for the
+	// trailing EOSE message and any other traffic (broadcasts, other
+	// subscriptions) queued concurrently during replay.
+	defaultMaxEventsPerREQ = 50
+
+	defaultRetentionDays   = 30            // default event retention period in days
+	retentionCheckInterval = 1 * time.Hour // how often to run retention cleanup
+	maxConnsPerIP          = 32            // max concurrent WebSocket connections from a single IP
+	maxConnections         = 1024          // max concurrent WebSocket connections across all IPs
 )
 
 // retentionExemptKinds are event kinds that should never be deleted by retention.
@@ -802,6 +812,13 @@ func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string,
 	r.metrics.lastPacketTime = time.Now()
 	r.metrics.mu.Unlock()
 
+	// Clamp every filter's limit to maxEventsPerREQ before querying. The store
+	// translates filter.Limit into a SQL LIMIT, so this bounds how many rows the
+	// query materializes in memory — without it, a tag/author filter with no
+	// client-supplied limit pulls the entire matching set (thousands of full
+	// events) into RAM on a multi-GB database, which is a primary OOM vector.
+	r.clampFilterLimits(filters)
+
 	var events []*event.Event
 	var err error
 
@@ -869,6 +886,22 @@ func (r *Relay) HandleReq(ctx context.Context, c *protocol.Client, subID string,
 	}
 
 	return nil
+}
+
+// clampFilterLimits caps each filter's limit at maxEventsPerREQ. A client may
+// request fewer, but never more; a filter with no limit is given maxEventsPerREQ.
+// This is what bounds the number of rows a query materializes in memory.
+func (r *Relay) clampFilterLimits(filters []*event.Filter) {
+	maxLimit := r.maxEventsPerREQ
+	if maxLimit <= 0 {
+		return // No cap configured; leave filters untouched.
+	}
+	for _, f := range filters {
+		if f.Limit == nil || *f.Limit > maxLimit {
+			capped := maxLimit
+			f.Limit = &capped
+		}
+	}
 }
 
 // HandleClose processes a CLOSE message from a client

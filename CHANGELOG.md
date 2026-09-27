@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.20.3 - 2026-09-27
+
+### Fixed
+- REQ replies could overflow a client's own send queue and get it disconnected as a "slow client" on its very first subscription, even when the client was healthy and reading immediately: `defaultMaxEventsPerREQ` (100) was larger than the per-client send queue (`sendQueueSize`, 64), and `HandleReq` enqueues its entire capped reply in one uninterrupted loop with no pacing. Any subscription matching 65+ stored events overflowed the queue before the write goroutine could drain a single message, tripping the queue-full disconnect and logging the remaining queued sends as "client closed" — visible in production as a repeating burst of "Send queue full ... disconnecting slow client" followed by dozens of "Failed to send stored event to client: client closed" lines, especially for clients that auto-reconnect and immediately resubscribe. `defaultMaxEventsPerREQ` is now 50, kept with headroom under the send queue so a REQ's entire reply always fits in one burst.
+
+## 0.20.2 - 2026-09-27
+
+### Fixed
+- NIP-42 `AUTH` message type was never handled: `MessageTypeAuth` was defined but the message dispatcher only handled `EVENT`/`REQ`/`CLOSE`/`COUNT`, so a client replying to an auth challenge with the spec's own `["AUTH", <event>]` message (rather than wrapping it in `["EVENT", ...]`) got `unknown message type: AUTH` and never authenticated. This is a real protocol gap fixed here, though investigation of a subsequent production log (after this fix was deployed) showed the reconnect-storm symptom actually seen in prod was a separate bug — see 0.20.3. The pre-auth handshake gate and the message dispatcher now accept the auth event via either message shape.
+
+## 0.20.1 - 2026-06-17
+
+### Fixed
+- Out-of-memory restarts under the container memory limit: production was OOM-killed (cgroup memory limit) roughly hourly to twice-daily, every kill at ~375 MiB against a 384 MiB limit. The growth was in cgo SQLite memory (invisible to `GOMEMLIMIT`) driven by unbounded query result sets on a multi-GB database. Two fixes:
+  - REQ filter limits are now clamped server-side to `maxEventsPerREQ` (100) before querying, so a filter with no client-supplied limit no longer materializes the entire matching set (thousands of full events) into memory. Previously the cap was applied in Go only after loading every matching row.
+  - SQLite `MaxOpenConns` reduced from 25 to 8. Each connection can hold its own page cache and in-memory temp working set, so the pool size directly multiplies worst-case query memory under concurrent load.
+
 ## 0.20.0 - 2026-06-15
 
 ### Fixed

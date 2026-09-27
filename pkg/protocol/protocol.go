@@ -262,9 +262,12 @@ func (c *Client) handleMessage(ctx context.Context, message []byte) error {
 
 	// NIP-42: Require authentication for all messages except CLOSE and AUTH events
 	if c.requireAuth && !c.authenticated && MessageType(msgType) != MessageTypeClose {
-		// Allow AUTH events (kind 22242) through for the handshake
-		if MessageType(msgType) == MessageTypeEvent && len(raw) >= 2 {
-			var partial struct{ Kind int `json:"kind"` }
+		// Allow AUTH events (kind 22242) through for the handshake, whether sent as
+		// ["EVENT", <event>] or, per NIP-42, as ["AUTH", <event>].
+		if (MessageType(msgType) == MessageTypeEvent || MessageType(msgType) == MessageTypeAuth) && len(raw) >= 2 {
+			var partial struct {
+				Kind int `json:"kind"`
+			}
 			if json.Unmarshal(raw[1], &partial) == nil && partial.Kind == 22242 {
 				goto authenticated
 			}
@@ -278,7 +281,9 @@ func (c *Client) handleMessage(ctx context.Context, message []byte) error {
 			}
 		}
 		if MessageType(msgType) == MessageTypeEvent && len(raw) >= 2 {
-			var partial struct{ ID string `json:"id"` }
+			var partial struct {
+				ID string `json:"id"`
+			}
 			if json.Unmarshal(raw[1], &partial) == nil {
 				c.SendOK(partial.ID, false, "auth-required: this relay requires NIP-42 authentication")
 				return nil
@@ -314,6 +319,8 @@ authenticated:
 		return c.handleCloseMessage(ctx, raw)
 	case MessageTypeCount:
 		return c.handleCountMessage(ctx, raw)
+	case MessageTypeAuth:
+		return c.handleAuthMessage(ctx, raw)
 	default:
 		return fmt.Errorf("unknown message type: %s", msgType)
 	}
@@ -344,6 +351,15 @@ func (c *Client) handleEventMessage(ctx context.Context, raw []json.RawMessage) 
 
 	c.SendOK(evt.ID, true, "")
 	return nil
+}
+
+// handleAuthMessage processes a NIP-42 ["AUTH", <event>] message. This is the
+// spec's actual client-side auth message; the relay also accepts the same
+// kind-22242 event wrapped as ["EVENT", <event>] for backward compatibility.
+// Both shapes carry an identical event payload, so both are handled the same
+// way as handleEventMessage.
+func (c *Client) handleAuthMessage(ctx context.Context, raw []json.RawMessage) error {
+	return c.handleEventMessage(ctx, raw)
 }
 
 // handleReqMessage processes a REQ message
