@@ -46,7 +46,7 @@ type ChannelStore interface {
 }
 
 // Version of the relay
-const Version = "0.20.3"
+const Version = "0.20.4"
 
 // maxBroadcastConcurrency caps the number of concurrent per-client send
 // goroutines a single broadcast may spawn. Without a cap, a burst of events

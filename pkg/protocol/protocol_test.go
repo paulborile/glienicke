@@ -104,3 +104,37 @@ func TestEnqueueReturnsClosedAfterClose(t *testing.T) {
 		t.Fatal("enqueue on a closed client should return an error")
 	}
 }
+
+// TestTruncateForLog verifies short payloads are returned as-is (so a normal
+// malformed message is fully visible in logs), and long ones are cut with a
+// visible marker rather than silently dropped or left unbounded.
+func TestTruncateForLog(t *testing.T) {
+	t.Run("under limit is unchanged", func(t *testing.T) {
+		got := truncateForLog([]byte("short"), 500)
+		if got != "short" {
+			t.Fatalf("got %q, want %q", got, "short")
+		}
+	})
+
+	t.Run("exactly at limit is unchanged", func(t *testing.T) {
+		data := strings.Repeat("x", 500)
+		got := truncateForLog([]byte(data), 500)
+		if got != data {
+			t.Fatalf("payload at exactly the limit must not be truncated")
+		}
+	})
+
+	t.Run("over limit is cut with marker", func(t *testing.T) {
+		data := strings.Repeat("x", 600)
+		got := truncateForLog([]byte(data), 500)
+		if len(got) <= 500 {
+			t.Fatalf("truncated output should include the marker suffix, got len %d", len(got))
+		}
+		if !strings.HasPrefix(got, strings.Repeat("x", 500)) {
+			t.Fatalf("truncated output should start with the first 500 bytes")
+		}
+		if !strings.Contains(got, "truncated, 600 bytes total") {
+			t.Fatalf("truncated output should report the original size, got: %s", got)
+		}
+	})
+}

@@ -25,7 +25,22 @@ const (
 	// prevents a few stalled clients from exhausting the process under a tight
 	// container memory limit.
 	sendQueueSize = 64
+
+	// maxLoggedPayloadBytes caps how much of a raw client payload is included
+	// in a log line on a parse/validation failure — enough to diagnose almost
+	// any malformed message, without letting one oversized or malicious
+	// payload bloat the logs.
+	maxLoggedPayloadBytes = 500
 )
+
+// truncateForLog returns data as a string, cut to at most max bytes with a
+// marker appended if it was cut, for safe inclusion in a log line.
+func truncateForLog(data []byte, max int) string {
+	if len(data) <= max {
+		return string(data)
+	}
+	return fmt.Sprintf("%s...(truncated, %d bytes total)", data[:max], len(data))
+}
 
 // MessageType represents the type of Nostr protocol message
 type MessageType string
@@ -334,7 +349,7 @@ func (c *Client) handleEventMessage(ctx context.Context, raw []json.RawMessage) 
 
 	var evt event.Event
 	if err := json.Unmarshal(raw[1], &evt); err != nil {
-		return fmt.Errorf("invalid event: %w", err)
+		return fmt.Errorf("invalid event: %w (payload: %s)", err, truncateForLog(raw[1], maxLoggedPayloadBytes))
 	}
 
 	// Validate event

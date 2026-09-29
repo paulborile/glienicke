@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.20.4 - 2026-09-28
+
+### Changed
+- Malformed `EVENT`/`AUTH` messages that fail to unmarshal now log the raw payload (truncated to 500 bytes) alongside the parse error, e.g. `invalid event: json: cannot unmarshal string into Go value of type event.Event (payload: "...")`. Previously the error gave no visibility into what the client actually sent, which made a recurring production error (a bot sending a malformed frame on every connection) impossible to diagnose without guessing. Scoped to this one error path only.
+
 ## 0.20.3 - 2026-09-27
 
 ### Fixed
