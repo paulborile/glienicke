@@ -45,11 +45,16 @@ type Options struct {
 // DefaultOptions returns default database options
 func DefaultOptions() *Options {
 	return &Options{
-		MaxOpenConns:    25,
-		MaxIdleConns:    5,
+		// Bound concurrent SQLite connections: each open connection can hold its
+		// own page cache plus an in-memory temp working set for sorts/queries, so
+		// MaxOpenConns directly multiplies worst-case query memory. Kept low to
+		// stay within a tight container memory limit on a large database. WAL mode
+		// allows concurrent readers alongside a writer, so a modest pool suffices.
+		MaxOpenConns:    8,
+		MaxIdleConns:    4,
 		ConnMaxLifetime: 5 * time.Minute,
 		EnableWAL:       true,
-		CacheSize:       -2000, // 2MB cache
+		CacheSize:       -2000, // 2MB cache per connection
 		BusyTimeout:     5 * time.Second,
 	}
 }
@@ -1073,4 +1078,3 @@ func getChannelID(evt *event.Event) string {
 	}
 	return ""
 }
-

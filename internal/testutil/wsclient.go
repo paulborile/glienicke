@@ -59,6 +59,13 @@ func (c *WSClient) SendEvent(evt *event.Event) error {
 	return c.conn.WriteJSON(msg)
 }
 
+// SendAuth sends a NIP-42 ["AUTH", <event>] message (the spec's client-side
+// auth reply, distinct from wrapping the same event in an EVENT message)
+func (c *WSClient) SendAuth(evt *event.Event) error {
+	msg := []interface{}{"AUTH", evt}
+	return c.conn.WriteJSON(msg)
+}
+
 // SendReq sends a REQ message
 func (c *WSClient) SendReq(subID string, filters ...*event.Filter) error {
 	msg := []interface{}{"REQ", subID}
